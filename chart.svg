@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1300" viewBox="0 0 1200 1300">
+  <!-- 定义箭头 -->
+  <defs>
+    <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto" markerUnits="strokeWidth">
+      <polygon points="0 0, 8 3, 0 6" fill="#666"/>
+    </marker>
+    <marker id="arrowhead-dash" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto" markerUnits="strokeWidth">
+      <polygon points="0 0, 8 3, 0 6" fill="#E65100"/>
+    </marker>
+  </defs>
+
+  <!-- 系统标题 -->
+  <text x="600" y="35" text-anchor="middle" font-size="19" font-weight="bold" fill="#333">宿舍楼智能安防系统架构图（云-边-端协同）</text>
+
+  <!-- 1. 端侧感知层（补充模型细节、异常触发逻辑） -->
+  <g>
+    <rect x="50" y="80" width="1100" height="200" fill="#E8F5E9" stroke="#4CAF50" stroke-width="2" rx="4"/>
+    <text x="600" y="60" text-anchor="middle" font-size="16" font-weight="bold" fill="#2E7D32">📹 端侧感知层（神经末梢）</text>
+    <!-- 感知节点 -->
+    <rect x="120" y="120" width="220" height="80" fill="#F5F5F5" stroke="#81C784" stroke-width="1" rx="2"/>
+    <text x="230" y="155" text-anchor="middle" font-size="13" fill="#333">嵌入式AI摄像节点<br/>(Jetson Nano)</text>
+    <rect x="370" y="120" width="220" height="80" fill="#F5F5F5" stroke="#81C784" stroke-width="1" rx="2"/>
+    <text x="480" y="155" text-anchor="middle" font-size="13" fill="#333">嵌入式AI摄像节点<br/>(Raspberry Pi+USB)</text>
+    <rect x="620" y="120" width="220" height="80" fill="#F5F5F5" stroke="#81C784" stroke-width="1" rx="2"/>
+    <text x="730" y="155" text-anchor="middle" font-size="13" fill="#333">嵌入式AI摄像节点<br/>(Raspberry Pi+USB)</text>
+    <rect x="870" y="120" width="220" height="80" fill="#F5F5F5" stroke="#81C784" stroke-width="1" rx="2"/>
+    <text x="980" y="155" text-anchor="middle" font-size="13" fill="#333">关键部署区域<br/>出入口/走廊/楼梯间</text>
+    <!-- 核心功能与模型 -->
+    <text x="600" y="230" text-anchor="middle" font-size="12" fill="#2E7D32">
+      核心能力：视频采集 | 轻量目标检测（YOLOv8n剪枝量化） | 本地预处理与缓存 | 异常触发"事件标志帧"上传
+    </text>
+  </g>
+
+  <!-- 2. 边缘智能层（拆分细分功能，匹配7大核心能力） -->
+  <g>
+    <rect x="50" y="330" width="1100" height="250" fill="#E3F2FD" stroke="#2196F3" stroke-width="2" rx="4"/>
+    <text x="600" y="310" text-anchor="middle" font-size="16" font-weight="bold" fill="#1565C0">💻 边缘智能层（决策中枢）</text>
+    <!-- 边缘设备 -->
+    <rect x="120" y="370" width="200" height="80" fill="#F5F5F5" stroke="#90CAF9" stroke-width="1" rx="2"/>
+    <text x="220" y="405" text-anchor="middle" font-size="13" fill="#333">边缘服务器<br/>(Intel NUC)</text>
+    <!-- 细分功能（2行布局，避免拥挤） -->
+    <rect x="350" y="370" width="180" height="60" fill="#F5F5F5" stroke="#90CAF9" stroke-width="1" rx="2"/>
+    <text x="440" y="400" text-anchor="middle" font-size="12" fill="#333">多路数据聚合<br/>网络流量管理(QoS)</text>
+    <rect x="560" y="370" width="180" height="60" fill="#F5F5F5" stroke="#90CAF9" stroke-width="1" rx="2"/>
+    <text x="650" y="400" text-anchor="middle" font-size="12" fill="#333">姿态估计(OpenPose-Lite)<br/>异常行为分析(TCN)</text>
+    <rect x="770" y="370" width="180" height="60" fill="#F5F5F5" stroke="#90CAF9" stroke-width="1" rx="2"/>
+    <text x="860" y="400" text-anchor="middle" font-size="12" fill="#333">聚集检测(DBSCAN)<br/>入侵检测(预设规则)</text>
+    <rect x="560" y="450" width="180" height="60" fill="#F5F5F5" stroke="#90CAF9" stroke-width="1" rx="2"/>
+    <text x="650" y="480" text-anchor="middle" font-size="12" fill="#333">本地决策与报警<br/>异常日志生成</text>
+  </g>
+
+  <!-- 3. 云端管理层（补充联邦学习、多端推送等核心逻辑） -->
+  <g>
+    <rect x="50" y="630" width="1100" height="220" fill="#FFF3E0" stroke="#FF9800" stroke-width="2" rx="4"/>
+    <text x="600" y="610" text-anchor="middle" font-size="16" font-weight="bold" fill="#E65100">☁️ 云端管理层（智慧大脑）</text>
+    <!-- 云端设备 -->
+    <rect x="120" y="670" width="220" height="80" fill="#F5F5F5" stroke="#FFCC80" stroke-width="1" rx="2"/>
+    <text x="230" y="705" text-anchor="middle" font-size="13" fill="#333">云端平台<br/>(学校数据中心/公有云)</text>
+    <!-- 核心功能 -->
+    <rect x="370" y="670" width="200" height="80" fill="#F5F5F5" stroke="#FFCC80" stroke-width="1" rx="2"/>
+    <text x="470" y="705" text-anchor="middle" font-size="12" fill="#333">模型训练(联邦学习)<br/>全局模型下发</text>
+    <rect x="600" y="670" width="200" height="80" fill="#F5F5F5" stroke="#FFCC80" stroke-width="1" rx="2"/>
+    <text x="700" y="705" text-anchor="middle" font-size="12" fill="#333">报警复核(ResNet+TCN)<br/>报警融合降误报</text>
+    <rect x="830" y="670" width="200" height="80" fill="#F5F5F5" stroke="#FFCC80" stroke-width="1" rx="2"/>
+    <text x="930" y="705" text-anchor="middle" font-size="12" fill="#333">可视化控制台<br/>系统管理与调度</text>
+    <!-- 交互接口 -->
+    <text x="600" y="780" text-anchor="middle" font-size="12" fill="#E65100">
+      交互接口：RESTful API | WebSocket（管理员控制台/移动端实时推送）
+    </text>
+  </g>
+
+  <!-- 数据流优化（完全匹配文字描述的协议与方向） -->
+  <g>
+    <!-- 端侧 → 边缘（MQTT协议，含异常事件流） -->
+    <line x1="230" y1="270" x2="230" y2="330" stroke="#4CAF50" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+    <line x1="480" y1="270" x2="480" y2="330" stroke="#4CAF50" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+    <line x1="730" y1="270" x2="730" y2="330" stroke="#4CAF50" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+    <text x="550" y="295" font-size="11" fill="#2E7D32">MQTT协议（结构化数据+异常事件帧）</text>
+    
+    <!-- 边缘 → 云端（HTTPS/WebSocket） -->
+    <line x1="220" y1="580" x2="220" y2="630" stroke="#2196F3" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+    <line x1="440" y1="580" x2="440" y2="630" stroke="#2196F3" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+    <line x1="650" y1="580" x2="650" y2="630" stroke="#2196F3" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+    <line x1="860" y1="580" x2="860" y2="630" stroke="#2196F3" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+    <text x="550" y="600" font-size="11" fill="#1565C0">HTTPS/WebSocket（报警日志+状态数据）</text>
+    
+    <!-- 云端 → 边缘（模型/配置下发，虚线区分控制流） -->
+    <line x1="470" y1="630" x2="470" y2="580" stroke="#E65100" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#arrowhead-dash)"/>
+    <text x="450" y="600" font-size="10" fill="#E65100" text-anchor="end">联邦学习模型下发</text>
+    
+    <!-- 边缘 ↔ 端侧（双向通信：MQTT/HTTP） -->
+    <line x1="300" y1="330" x2="300" y2="270" stroke="#666" stroke-width="1" stroke-dasharray="2,2" marker-end="url(#arrowhead)"/>
+    <text x="310" y="295" font-size="10" fill="#666" text-anchor="start">MQTT/HTTP<br/>双向通信</text>
+  </g>
+
+  <!-- 架构优势标注（提炼总结核心价值） -->
+  <rect x="50" y="900" width="1100" height="80" fill="#F8F8F8" stroke="#333" stroke-width="1" rx="4"/>
+  <text x="600" y="930" text-anchor="middle" font-size="13" font-weight="500" fill="#333">
+    架构优势：低延迟（边缘实时决策） | 高可靠（端边云协同） | 隐私保护（端侧轻量计算） | 易扩展（联邦学习迭代）
+  </text>
+</svg>
