@@ -40,8 +40,10 @@ namespace ns
         PACKAGE,   ///< package 关键字
         SWITCH,    ///< switch关键字
         CASE,      ///< case关键字
+        DEFAULT,   ///< default关键字
         TRY,       ///< try关键字
         CATCH,     ///< catch关键字
+        THROW,     ///< throw关键字
         DEBUGGER,  ///< debugger关键字（用于调试）
         /* 基础数据类型 */
         BOOLEAN,     ///< 布尔类型
@@ -108,6 +110,8 @@ namespace ns
      * @brief 关键字及常量表，用于快速查找 Token 类型
      */
     static std::unordered_map<std::string, TokenType> keywords = {
+        {"default",TokenType::DEFAULT},
+        {"throw",TokenType::THROW},
         {"switch", TokenType::SWITCH},
         {"case", TokenType::CASE},
         {"try", TokenType::TRY},
@@ -145,6 +149,8 @@ namespace ns
      * @brief Token 类型到字符串的映射表
      */
     static std::unordered_map<TokenType, std::string> names = {
+        {TokenType::DEFAULT,"default"},
+        {TokenType::THROW,"THROW"},
         {TokenType::Scientific, "SCIENTIFIC"},
         {TokenType::Hexadecimal, "HEXADECIMAL"},
         {TokenType::Binary, "BINARY"},

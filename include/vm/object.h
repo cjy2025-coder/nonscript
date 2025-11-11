@@ -2,7 +2,7 @@
 #include "frontend/ast.h"
 #include <cfloat>
 #include <functional>
-#include<map>
+#include <map>
 namespace ns
 {
     class Enviroment;
@@ -24,7 +24,9 @@ namespace ns
         OBJ_ERROR,
         OBJ_BUILTIN,
         OBJ_RET,
-        OBJ_SHORT
+        OBJ_SHORT,
+        OBJ_EXCEPTION,
+        OBJ_EXCP
     };
 
     class Object
@@ -39,6 +41,10 @@ namespace ns
         OBJECT getType() const
         {
             return type;
+        }
+        static bool equal(std::shared_ptr<Object> obj1, std::shared_ptr<Object> obj2)
+        {
+            return obj1->toBuf() == obj2->toBuf();
         }
         virtual std::string toBuf() const = 0;
     };
@@ -331,6 +337,23 @@ namespace ns
         }
     };
 
+    class Exception : public Object
+    {
+    private:
+        std::string exception;
+
+    public:
+        Exception(const std::string &exception_) : exception(exception_), Object(OBJ_EXCEPTION) {}
+        std::string getValue() const
+        {
+            return exception;
+        }
+        std::string toBuf() const override
+        {
+            return exception;
+        }
+    };
+
     class Func : public Object
     {
     private:
@@ -411,6 +434,22 @@ namespace ns
     public:
         ReturnValue(std::shared_ptr<Object> &obj) : Object(OBJECT::OBJ_RET), value(obj) {}
         std::shared_ptr<Object> get_value()
+        {
+            return value;
+        }
+        std::string toBuf() const override
+        {
+            return value->toBuf();
+        }
+    };
+        class ExceptionValue : public Object
+    {
+    private:
+        std::shared_ptr<Object> value;
+
+    public:
+        ExceptionValue(std::shared_ptr<Object> &obj) : Object(OBJECT::OBJ_EXCP), value(obj) {}
+        std::shared_ptr<Object> get_value() const
         {
             return value;
         }

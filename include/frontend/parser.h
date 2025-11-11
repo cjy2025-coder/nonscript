@@ -66,10 +66,12 @@ namespace ns
         void setLexer(Lexer *lexer);
     private:
         Priority get_precedence() const;
+        bool currentIs(TokenType type) const;
     private:
 
         //对于语句的解析函数
-
+        std::unique_ptr<ThrowStatement> parse_throw_statement();
+        std::unique_ptr<TryCatchStatement> parse_try_catch_statement();
         std::unique_ptr<Statement> parse_statement();
         std::unique_ptr<DeclareStatement> parse_declare_statement();
         std::unique_ptr<ExpressionStatement> parse_expression_statement();
@@ -80,9 +82,11 @@ namespace ns
         std::unique_ptr<ReturnStatement> parse_return_statement();
         std::unique_ptr<ShortStatement> parse_short_statement();
         std::unique_ptr<ImportStatement> parse_import_statement();
+        std::unique_ptr<ForLoop> parse_for_loop();
 
         //对于表达式的解析函数
 
+        std::unique_ptr<SwitchExpression> parse_switch_expression();
         std::unique_ptr<LambdaExpr> parse_lambda_expression();
         std::unique_ptr<Expression> parse_expression(Priority priority);
         std::unique_ptr<Expression> parse_prefix_expression();

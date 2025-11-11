@@ -717,7 +717,7 @@ namespace ns
             // 处理继承
             if (!baseClasses.empty())
             {
-                ret += " extend ";
+                ret += " extends ";
                 for (size_t i = 0; i < baseClasses.size(); ++i)
                 {
                     if (i > 0)
@@ -1100,11 +1100,11 @@ namespace ns
         {
             body.reset(body_);
         }
-        Expression *getCondition()
+        Expression *getCondition() const
         {
             return condition.get();
         }
-        BlockStatement *getBody()
+        BlockStatement *getBody() const
         {
             return body.get();
         }
@@ -1133,19 +1133,197 @@ namespace ns
             return ret;
         }
     };
-    class SwitchExpression : public Expression{
+    struct SwitchCase{
+       std::unique_ptr<Expression> mcase;
+       std::unique_ptr<BlockStatement> mbody;
+    };
+    struct DefaultSwitchCase{
+       std::unique_ptr<BlockStatement> mbody;
+    };
+    class SwitchExpression : public Expression
+    {
     private:
-        std::unique_ptr<Expression>  expr;
+        std::unique_ptr<Expression> expr;
+        std::vector<std::unique_ptr<SwitchCase>> cases;
+        std::unique_ptr<DefaultSwitchCase> defaultCase;
     public:
-         SwitchExpression(){}
-         SwitchExpression(const Token & t):Expression(t){}
+        SwitchExpression() {}
+        SwitchExpression(const Token &t) : Expression(t) {}
     public:
-         std::string toString() const override{
+        void setExpr(std::unique_ptr<Expression> expr_){
+            expr=std::move(expr_);
+        }
+        void setDefaultCase(std::unique_ptr<DefaultSwitchCase> defaultCase_){
+            defaultCase=std::move(defaultCase_);
+        }
+        DefaultSwitchCase * getDefaultCase() const{
+            return defaultCase.get();
+        }
+        void addCase(std::unique_ptr<SwitchCase> case_){
+            cases.push_back(std::move(case_));
+        }
+        const std::vector<std::unique_ptr<SwitchCase>> & getCases() const{
+            return cases;
+        }
+        Expression * getExpr() const{
+            return expr.get();
+        }
+    public:
+        std::string toString() const override
+        {
+            std::string ret = "";
+            ret += "switch (" + expr->toString() + ") {\n";
+            for(const auto & _case : cases){
+                ret+=" case ";
+                ret+=_case->mcase->toString();
+                ret+=" : {\n";
+                ret+=_case->mbody->toString();
+                ret+=" }\n";
+            }
+            if(defaultCase){
+               ret+=" default:";
+               ret+=" {\n";
+               ret+=defaultCase->mbody->toString();
+               ret+=" }\n";
+            }
+            ret += "}\n";
+            return ret;
+        }
+    };
+    typedef struct LoopVariable{
+       std::unique_ptr<Ident> var;
+       std::unique_ptr<Expression> value;
+    }*PLoopVariable;
+    // typedef struct LoopAction{
+    //    std::unique_ptr<ExpressionStatement> action;
+    // }*LoopAction;
+    
+    class ForLoop: public Statement{
+    private:
+        std::unique_ptr<Expression> condtion;
+        std::vector<std::unique_ptr<LoopVariable>> vars;
+        std::vector<std::unique_ptr<Expression>> actions;
+        std::unique_ptr<BlockStatement> body;
+    public:
+        void setConditon(std::unique_ptr<Expression> condtion_){
+            condtion=std::move(condtion_);
+        }
+        void setBody(std::unique_ptr<BlockStatement> body_){
+            body=std::move(body_);
+        }
+        void addVariable(std::unique_ptr<LoopVariable> var){
+            vars.push_back(std::move(var));
+        }
+        void addAction(std::unique_ptr<Expression> action){
+            actions.push_back(std::move(action));
+        }
+        Expression * getCondtion()const{
+            return condtion.get();
+        }
+        BlockStatement * getBody()const{
+            return body.get();
+        }
+        const std::vector<std::unique_ptr<LoopVariable>> & getVariables()const{
+            return vars;
+        }
+        const std::vector<std::unique_ptr<Expression>> & getActions()const{
+            return actions;
+        }
+    public:
+        std::string toString() const override{
             std::string ret="";
-            ret+="switch ("+expr->toString()+") {\n";
+            ret+="for(";
+            for(size_t i=0;i < vars.size() ; i++){
+                if(i){
+                    ret+=", ";
+                }
+                ret+=vars[i]->var->toString();
+                ret+="= ";
+                ret+=vars[i]->value->toString();
+            }
+            ret+="; ";
+            ret+=condtion->toString();
+            ret+="; ";
+            for(size_t i=0;i < actions.size() ; i++){
+                if(i){
+                    ret+=", ";
+                }
+                ret+=actions[i]->toString();
+            }
+            ret+="){\n";
+            ret+=body->toString();
             ret+="}\n";
             return ret;
-         }
+        }
+    };
+    class TryCatchStatement : public Statement
+    {
+    private:
+        std::unique_ptr<BlockStatement> try_body;
+        std::unique_ptr<BlockStatement> exception_body;
+        std::unique_ptr<Ident> exception;
+    public:
+        TryCatchStatement() {}
+        TryCatchStatement(const Token &token) : Statement(token) {}
+
+    public:
+        void setTryBody(std::unique_ptr<BlockStatement> body_)
+        {
+            try_body = std::move(body_);
+        }
+        void setExceptionBody(std::unique_ptr<BlockStatement> body_)
+        {
+            exception_body = std::move(body_);
+        }
+        void setException(std::unique_ptr<Ident> exception_){
+            exception=std::move(exception_);
+        }
+        BlockStatement * getTryBody() const
+        {
+            return try_body.get();
+        }
+        BlockStatement * getExceptionBody() const
+        {
+            return exception_body.get();
+        }
+        Ident * getException() const{
+            return exception.get();
+        }
+    public:
+       std::string toString() const override{
+            std::string ret="";
+            ret+="try{\n";
+            ret+=try_body->toString();
+            ret+="}\n";
+            ret+="catch(";
+            ret+=exception->toString();
+            ret+="){\n";
+            ret+=exception_body->toString();
+            ret+="}";
+            return ret;
+       }
+    };
+    class ThrowStatement:public Statement{
+    private:
+        std::unique_ptr<Expression> exception;
+    public:
+        ThrowStatement(const Token & t):Statement(t){}
+        ThrowStatement(){}
+    public:
+        Expression * getException() const{
+            return exception.get();
+        }
+        void setException(std::unique_ptr<Expression> _exception){
+            exception=std::move(exception);
+        }
+    public:
+        std::string toString() const override{
+            std::string ret="";
+            ret+="throw ";
+            ret+=exception->toString();
+            ret+="\n";
+            return ret;
+        }
     };
     class ReturnStatement : public Statement
     {

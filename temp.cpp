@@ -1,12 +1,11 @@
+#include<iostream>
 int main(){
-    int a=1,b=a;
-switch (a+1)
-{
-case 1:
-    /* code */
-    break;
+for(int a=0,b=1;a>=1 && b<1;a++){
 
-default:
-    break;
 }
+
+for(int a=0,b=1;a>=1,b<1;a++,std::cout<<a){
+
+}
+
 }

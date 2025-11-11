@@ -6,6 +6,10 @@ namespace ns
     {
         mLexer = lexer;
     }
+    bool Parser::currentIs(TokenType type) const
+    {
+        return current().getType() == type;
+    }
     Priority Parser::get_precedence() const
     {
         auto tt = current().getType();
@@ -68,6 +72,135 @@ namespace ns
         // if (error)
         //     return NULL;
         return program;
+    }
+    std::unique_ptr<ForLoop> Parser::parse_for_loop()
+    {
+        auto loop = std::make_unique<ForLoop>();
+        advance(); // 跳过 for 关键字
+        if (!match(TokenType::LPAREN))
+        {
+            return nullptr;
+        }
+        advance(); // 跳过左括号
+        while (current().getType() == TokenType::IDENT)
+        {
+            auto ident = parse_ident_expression();
+            if (!ident)
+            {
+                return nullptr;
+            }
+            if (!match(TokenType::ASSIGN))
+            {
+                return nullptr;
+            }
+            advance(); // 跳过等号;
+            auto rvalue = parse_expression(Priority::LOWEST);
+            if (!rvalue)
+            {
+                return nullptr;
+            }
+            auto _ = std::make_unique<LoopVariable>();
+            _->var = std::move(ident);
+            _->value = std::move(rvalue);
+            loop->addVariable(std::move(_));
+            if (currentIs(TokenType::COMMA))
+            {
+                advance(); // 跳过逗号
+            }
+        }
+        if (!match(TokenType::SEMICOLON))
+        {
+            return nullptr;
+        }
+        advance(); // 跳过分号
+        auto condition = parse_expression(Priority::LOWEST);
+        if (!condition)
+        {
+            return nullptr;
+        }
+        loop->setConditon(std::move(condition));
+        if (!match(TokenType::SEMICOLON))
+        {
+            return nullptr;
+        }
+        advance(); // 跳过分号
+        if (!currentIs(TokenType::RPAREN))
+            while (1)
+            {
+                auto _ = parse_expression(Priority::LOWEST);
+                if (!_)
+                {
+                    return nullptr;
+                }
+                loop->addAction(std::move(_));
+                if (currentIs(TokenType::RPAREN) || currentIs(TokenType::END))
+                {
+                    break;
+                }
+                if (currentIs(TokenType::COMMA))
+                {
+                    advance(); // 跳过逗号
+                }
+            }
+        if (!match(TokenType::RPAREN))
+        {
+            return nullptr;
+        }
+        advance(); // 跳过右括号
+        auto body = parse_blockstatement(1);
+        if (!body)
+        {
+            return nullptr;
+        }
+        loop->setBody(std::move(body));
+        if (currentIs(TokenType::SEMICOLON))
+        {
+            advance(); // 跳过尾随分号
+        }
+        return loop;
+    }
+    std::unique_ptr<TryCatchStatement> Parser::parse_try_catch_statement()
+    {
+        auto stmt = std::make_unique<TryCatchStatement>();
+        advance(); // 跳过try关键字
+        auto try_body = parse_blockstatement(0);
+        if (!try_body)
+        {
+            return nullptr;
+        }
+        if (!match(TokenType::CATCH))
+        {
+            return nullptr;
+        }
+        advance(); // 跳过catch关键字
+        if (!match(TokenType::LPAREN))
+        {
+            return nullptr;
+        }
+        advance(); // 跳过左括号
+        if (!match(TokenType::IDENT))
+        {
+            return nullptr;
+        }
+        auto _exception = parse_ident_expression();
+        if (!_exception)
+        {
+            return nullptr;
+        }
+        if (!match(TokenType::RPAREN))
+        {
+            return nullptr;
+        }
+        advance(); // 跳过右括号
+        auto catch_body = parse_blockstatement(0);
+        if (!catch_body)
+        {
+            return nullptr;
+        }
+        stmt->setException(std::move(_exception));
+        stmt->setTryBody(std::move(try_body));
+        stmt->setExceptionBody(std::move(catch_body));
+        return stmt;
     }
     std::unique_ptr<IndexExpression> Parser::parse_index_expression(Expression *left)
     {
@@ -213,6 +346,9 @@ namespace ns
 
     std::unique_ptr<BlockStatement> Parser::parse_blockstatement(int loop)
     {
+        if(!match(TokenType::LBPAREN)){
+            return nullptr;
+        }
         std::unique_ptr<BlockStatement> bstmt(new BlockStatement(current()));
         advance();
         while (current().getType() != TokenType::RBPAREN && current().getType() != TokenType::END)
@@ -260,11 +396,11 @@ namespace ns
         advance();
         if (current().getType() == TokenType::EXTENDS)
         {                                       // 如果有父类
-            advance();                          // 跳过extend关键字
+            advance();                          // 跳过extends关键字
             auto id = parse_ident_expression(); // 解析父类名
             if (id == NULL)
             {
-                raiseError(ErrorType::SYNTAX_ERROR, "expect a class name after `extend`", current().getLocation());
+                raiseError(ErrorType::SYNTAX_ERROR, "expect a class name after :extends", current().getLocation());
                 return NULL;
             }
             c->addBaseClass(std::move(id)); // 设置父类
@@ -430,13 +566,31 @@ namespace ns
             advance();
         return c;
     }
-
+    std::unique_ptr<ThrowStatement> Parser::parse_throw_statement(){
+        auto stmt=std::make_unique<ThrowStatement>(current());
+        advance();//跳过 throw 关键字
+        auto exception=parse_expression(Priority::LOWEST);
+        if(!exception){
+            return nullptr;
+        }
+        stmt->setException(std::move(exception));
+        if(currentIs(TokenType::SEMICOLON)){
+            advance();
+        }
+        return stmt;
+    }
     std::unique_ptr<Statement> Parser::parse_statement()
     {
         switch (current().getType())
         {
         case TokenType::END:
             return NULL;
+        case TokenType::THROW:
+            return parse_throw_statement();
+        case TokenType::FOR:
+            return parse_for_loop();
+        case TokenType::TRY:
+            return parse_try_catch_statement();
         case TokenType::IMPORT:
             return parse_import_statement();
         case TokenType::VAR: // 解析变量定义
@@ -676,12 +830,89 @@ namespace ns
         loop->setBody(body.release());
         return loop;
     }
-
+    std::unique_ptr<SwitchExpression> Parser::parse_switch_expression()
+    {
+        auto expr = std::make_unique<SwitchExpression>();
+        advance(); // 跳过switch关键字
+        if (!match(TokenType::LPAREN))
+        {
+            return nullptr;
+        }
+        advance(); // 跳过左括号
+        auto _ = parse_expression(Priority::LOWEST);
+        if (!_)
+        {
+            return nullptr;
+        }
+        expr->setExpr(std::move(_));
+        if (!match(TokenType::RPAREN))
+        {
+            return nullptr;
+        }
+        advance(); // 跳过右括号
+        if (!match(TokenType::LBPAREN))
+        {
+            return nullptr;
+        }
+        advance(); // 跳过左大括号
+        while (current().getType() == TokenType::CASE)
+        {
+            advance(); // 跳过case关键字
+            auto value = parse_expression(Priority::LOWEST);
+            if (!value)
+            {
+                return nullptr;
+            }
+            if (!match(TokenType::COLON))
+            {
+                return nullptr;
+            }
+            advance(); // 跳过冒号
+            auto body = parse_blockstatement(0);
+            if (!body)
+            {
+                return nullptr;
+            }
+            auto _case = std::make_unique<SwitchCase>();
+            if (!_case)
+            {
+                return nullptr;
+            }
+            _case->mcase = std::move(value);
+            _case->mbody = std::move(body);
+            expr->addCase(std::move(_case));
+        }
+        if(currentIs(TokenType::DEFAULT)){//遇到default关键字
+            advance();//跳过 default 关键字
+            if(!match(TokenType::COLON)){
+                return nullptr;
+            }
+            advance();//跳过冒号
+            auto default_body=parse_blockstatement(0);
+            if(!default_body){
+                return nullptr;
+            }
+            auto default_case=std::make_unique<DefaultSwitchCase>();
+            default_case->mbody=std::move(default_body);
+            expr->setDefaultCase(std::move(default_case));
+        }
+        if (!match(TokenType::RBPAREN))
+        {
+            return nullptr;
+        }
+        advance(); // 跳过右大括号
+        // if(current().getType() == TokenType::SEMICOLON){
+        //     advance();//跳过尾随分号
+        // }
+        return expr;
+    }
     std::unique_ptr<Expression> Parser::parse_prefix_expression()
     {
         auto tt = current().getType();
         switch (tt)
         {
+        case TokenType::SWITCH:
+            return parse_switch_expression();
         case TokenType::UNTIL:
             return parse_until_expresssion();
         case TokenType::WHILE:
@@ -713,14 +944,14 @@ namespace ns
         case TokenType::MINUS:
         case TokenType::LINC:
         case TokenType::LDEC:
-            {
-                Token op = current();
-                advance();
-                auto right = parse_expression(Priority::PREFIX);
-                auto ret = std::make_unique<PrefixExpression>(op);
-                ret->setRight(right.release());
-                return ret;
-            }
+        {
+            Token op = current();
+            advance();
+            auto right = parse_expression(Priority::PREFIX);
+            auto ret = std::make_unique<PrefixExpression>(op);
+            ret->setRight(right.release());
+            return ret;
+        }
 
         // new关键字
         case TokenType::NEW:
@@ -753,17 +984,20 @@ namespace ns
             return nullptr;
         }
     }
-    std::unique_ptr<ImportStatement> Parser::parse_import_statement(){
-         advance();//跳过 import 关键字
-         if(!match(TokenType::STRING)){
+    std::unique_ptr<ImportStatement> Parser::parse_import_statement()
+    {
+        advance(); // 跳过 import 关键字
+        if (!match(TokenType::STRING))
+        {
             return nullptr;
-         }
-         auto stmt=std::make_unique<ImportStatement>(current());
-         advance();//跳过库名
-         if(current().getType() == TokenType::SEMICOLON){
+        }
+        auto stmt = std::make_unique<ImportStatement>(current());
+        advance(); // 跳过库名
+        if (current().getType() == TokenType::SEMICOLON)
+        {
             advance();
-         }
-         return stmt;
+        }
+        return stmt;
     }
     std::unique_ptr<Expression> Parser::parse_infix_expression(std::unique_ptr<Expression> left, Token op)
     {

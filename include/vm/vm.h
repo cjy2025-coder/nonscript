@@ -170,6 +170,7 @@ namespace ns
         Parser *parser = NULL;
         mutable std::shared_ptr<Enviroment> env;
         std::string dir = "";
+
     private:
         bool is_error(const Object *obj)
         {
@@ -222,15 +223,18 @@ namespace ns
         VM() : env(new Enviroment()) {}
         std::shared_ptr<Object> eval(std::string source);
         std::shared_ptr<Object> eval(std::string source, std::shared_ptr<Enviroment> &env_);
-        std::shared_ptr<Object> eval(AstNode *node, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval(const AstNode *node, std::shared_ptr<Enviroment> &env_);
 
     private:
         std::shared_ptr<Object> eval_program(std::vector<Statement *> stmts, std::shared_ptr<Enviroment> &env_);
         std::shared_ptr<Object> eval_statements(BlockStatement *bs, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_for_loop(const ForLoop *stmt, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_throw_statement(const ThrowStatement *stmt, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_try_catch_statement(const TryCatchStatement *stmt, std::shared_ptr<Enviroment> &env_);
         std::vector<std::shared_ptr<Object>> eval_expressions(const std::vector<std::unique_ptr<Expression>> &args, std::shared_ptr<Enviroment> &env_);
         std::shared_ptr<Object> apply_func(const Object *f, std::vector<std::shared_ptr<Object>> &args);
         std::shared_ptr<Enviroment> extend_func_env(Func *fn, std::vector<std::shared_ptr<Object>> &args);
-        std::shared_ptr<Object> eval_prefix_expression(const std::string &op, const Object *right);
+        std::shared_ptr<Object> eval_prefix_expression(const std::string &op, const Object *right,std::shared_ptr<Enviroment> & env_);
         std::shared_ptr<Object> eval_bang_operator_expression(const Object *right);
         std::shared_ptr<Object> eval_infix_expression(const Object *left, const std::string &op, const Object *right);
         std::shared_ptr<Object> eval_number_infix_expression(const Number *left, const std::string op, const Number *right);
@@ -239,10 +243,12 @@ namespace ns
         std::shared_ptr<Object> eval_assign_expression(Expression *left, Expression *right, std::shared_ptr<Enviroment> &env_);
         std::shared_ptr<Object> eval_index_expression(Object *arr, Object *index);
         std::shared_ptr<Object> eval_if_expression(IfExpression *ie, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_until_expression(const Expression *condition, const BlockStatement *body, std::shared_ptr<Enviroment> &env_);
         std::shared_ptr<Object> eval_while_expression(Expression *condition, BlockStatement *body, std::shared_ptr<Enviroment> &env_);
         std::shared_ptr<Object> eval_logic_expression(Expression *left, const std::string &op, Expression *right, std::shared_ptr<Enviroment> &env_);
         std::shared_ptr<Object> eval_new_expression(const NewExpression *e, std::shared_ptr<Enviroment> &env_);
         std::shared_ptr<Object> eval_point_expression(Expression *left, Expression *right, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_switch_expression(const SwitchExpression *expr, std::shared_ptr<Enviroment> &env_);
     };
 
     std::shared_ptr<Object> VM::eval(std::string source, std::shared_ptr<Enviroment> &env_)
@@ -265,7 +271,108 @@ namespace ns
         }
         return eval(root.get(), env_);
     }
+    std::shared_ptr<Object> VM::eval_for_loop(const ForLoop *stmt, std::shared_ptr<Enviroment> &env_)
+    {
+        auto &vars = stmt->getVariables();
+        auto condition = stmt->getCondtion();
+        auto &actions = stmt->getActions();
+        auto body=stmt->getBody();
+        auto extend_env = std::make_shared<Enviroment>(env_);
+        for (const auto &var : vars)
+        {
+            auto obj = eval(var->value.get(), extend_env);
+            if (is_error(obj.get()))
+            {
+                return obj;
+            }
+            extend_env->set(var->var->getLiteral(), obj);
+        }
+        while(true){
+            auto con=eval(condition,extend_env);
+            if(is_error(con.get())){
+                return con;
+            }
+            try{
+                if(!is_true(con.get())){
+                    break;
+                }
+            }
+            catch(Exception e){
+                
+            }
+            auto temp=eval(body,extend_env);
+            if(is_error(temp.get())){
+                return temp;
+            }
+            for(const auto & action : actions){
+                auto _=eval(action.get(),extend_env);
+                if(is_error(_.get())){
+                    return _;
+                }
+            }
+        }
+        return null;
+    }
+    std::shared_ptr<Object> VM::eval_throw_statement(const ThrowStatement *stmt, std::shared_ptr<Enviroment> &env_)
+    {
+        auto expr = stmt->getException();
+        auto new_exception = eval(expr, env_);
+        if (is_error(new_exception.get()))
+        {
+            return new_exception;
+        }
+        return std::make_shared<ExceptionValue>(new_exception);
+    }
+    std::shared_ptr<Object> VM::eval_try_catch_statement(const TryCatchStatement *stmt, std::shared_ptr<Enviroment> &env_)
+    {
+        auto try_body = stmt->getTryBody();
+        auto exception = stmt->getException();
+        auto exception_body = stmt->getExceptionBody();
 
+        auto try_result = eval(try_body, env_);
+        if (is_error(try_result.get()))
+        {
+            return try_result;
+        }
+        if (auto *_ = dynamic_cast<const ExceptionValue *>(try_result.get()))
+        {
+            auto extend_env = std::make_shared<Enviroment>(env_);
+            extend_env->set(exception->getLiteral(), _->get_value());
+            auto exception_result = eval(exception_body, extend_env);
+            return exception_result;
+        }
+        else
+        {
+            return null;
+        }
+    }
+    std::shared_ptr<Object> VM::eval_switch_expression(const SwitchExpression *expr, std::shared_ptr<Enviroment> &env_)
+    {
+        auto value = expr->getExpr();
+        auto &cases = expr->getCases();
+        auto default_case = expr->getDefaultCase();
+
+        auto value_ = eval(value, env_);
+        if (is_error(value_.get()))
+        {
+            return value_;
+        }
+
+        for (const auto &_ : cases)
+        {
+            auto &&cas = _->mcase;
+            auto case_value = eval(cas.get(), env_);
+            if (Object::equal(value_, case_value))
+            {
+                auto &&body = _->mbody;
+                return eval(body.get(), env_);
+            }
+        }
+        if (!default_case)
+            return null;
+        const auto &body_ = default_case->mbody;
+        return eval(body_.get(), env_);
+    }
     std::shared_ptr<Object> VM::eval(std::string source)
     {
         ns::Lexer lexer(source, "example.ss");
@@ -287,8 +394,12 @@ namespace ns
         return eval(root.get(), env);
     }
 
-    std::shared_ptr<Object> VM::eval(AstNode *node, std::shared_ptr<Enviroment> &env_)
+    std::shared_ptr<Object> VM::eval(const AstNode *node, std::shared_ptr<Enviroment> &env_)
     {
+        if (!node)
+        {
+            return null;
+        }
         /*对基本数据类型的处理*/
         if (auto *val = dynamic_cast<const I8Literal *>(node))
         {
@@ -392,7 +503,18 @@ namespace ns
                 return e;
             return std::make_shared<ReturnValue>(e);
         }
-
+        else if (auto *stmt = dynamic_cast<const ThrowStatement *>(node))
+        {
+            return eval_throw_statement(stmt, env_);
+        }
+        else if (auto *stmt = dynamic_cast<const TryCatchStatement *>(node))
+        {
+            return eval_try_catch_statement(stmt, env_);
+        }
+                else if (auto *stmt = dynamic_cast<const ForLoop *>(node))
+        {
+            return eval_for_loop(stmt, env_);
+        }
         else if (typeid(*node) == typeid(DeclareStatement))
         {
             DeclareStatement *val = (DeclareStatement *)node;
@@ -476,7 +598,7 @@ namespace ns
             auto op = ps->getOperator();
             if (is_error(right.get()))
                 return right;
-            return eval_prefix_expression(op, right.get());
+            return eval_prefix_expression(op, right.get(),env_);
         }
         else if (typeid(*node) == typeid(NewExpression))
         {
@@ -489,6 +611,14 @@ namespace ns
             auto condition = we->getCondition();
             auto body = we->getBody();
             return eval_while_expression(condition, body, env_);
+        }
+        else if (auto *val = dynamic_cast<const UntilExpression *>(node))
+        {
+            return eval_until_expression(val->getCondition(), val->getBody(), env_);
+        }
+        else if (auto *val = dynamic_cast<const SwitchExpression *>(node))
+        {
+            return eval_switch_expression(val, env_);
         }
         else if (typeid(*node) == typeid(IfExpression))
         {
@@ -587,7 +717,8 @@ namespace ns
     std::shared_ptr<Object> VM::eval_new_expression(const NewExpression *e, std::shared_ptr<Enviroment> &env_)
     {
         Expression *right = e->getRight();
-        if(right == nullptr){
+        if (right == nullptr)
+        {
             return std::make_shared<Error>("");
         }
         std::string id = "";
@@ -662,7 +793,26 @@ namespace ns
             return b2 ? True : False;
         }
     }
-
+    std::shared_ptr<Object> VM::eval_until_expression(const Expression *condition, const BlockStatement *body, std::shared_ptr<Enviroment> &env_)
+    {
+        std::shared_ptr<Enviroment> extend_env = std::make_shared<Enviroment>(env_);
+        while (1)
+        {
+            auto con = eval(condition, extend_env);
+            if (is_error(con.get()))
+                return con;
+            if (is_true(con.get()))
+                break;
+            auto r = eval(body, extend_env);
+            if (r == Break)
+                break;
+            else if (r == Continue)
+                continue;
+            else if ((typeid(*(r.get()))) == typeid(ReturnValue))
+                return r;
+        }
+        return null;
+    }
     std::shared_ptr<Object> VM::eval_while_expression(Expression *condition, BlockStatement *body, std::shared_ptr<Enviroment> &env_)
     {
         std::shared_ptr<Enviroment> extend_env = std::make_shared<Enviroment>(env_);
@@ -1083,7 +1233,10 @@ namespace ns
         return is_true(right) ? False : True;
     }
 
-    std::shared_ptr<Object> VM::eval_prefix_expression(const std::string &op, const Object *right)
+    std::shared_ptr<Object> VM::eval_prefix_expression(
+        const std::string &op, 
+        const Object *right,
+        std::shared_ptr<Enviroment> & env_)
     {
         if (op == "!")
             return eval_bang_operator_expression(right);
@@ -1186,6 +1339,10 @@ namespace ns
             {
                 ReturnValue *ret = (ReturnValue *)(result.get());
                 return ret->get_value();
+            }
+            else if (auto *value = dynamic_cast<const ExceptionValue *>(result.get()))
+            {
+                return result;
             }
         }
         return result;
