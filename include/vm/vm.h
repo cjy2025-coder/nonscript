@@ -4,6 +4,7 @@
 #include "enviroment.h"
 #include <sstream>
 #include <fstream>
+#include<filesystem>
 namespace ns
 {
     enum class TypeRank
@@ -178,7 +179,7 @@ namespace ns
         }
         bool is_logic_operator(std::string op)
         {
-            return op == "|" || op == "or" || op == "&" || op == "and";
+            return op == "||" || op == "or" || op == "&&" || op == "and";
         }
 
         bool is_true(const Object *obj)
@@ -216,7 +217,7 @@ namespace ns
                 return value->getValue() != 0.0f;
             }
             else
-                return false;
+                return true;
         }
 
     public:
@@ -224,7 +225,10 @@ namespace ns
         std::shared_ptr<Object> eval(std::string source);
         std::shared_ptr<Object> eval(std::string source, std::shared_ptr<Enviroment> &env_);
         std::shared_ptr<Object> eval(const AstNode *node, std::shared_ptr<Enviroment> &env_);
-
+    private:
+        bool isPrefixOp(std::string op){
+            return op == "+" || op == "-" || op == "++" || op == "--" || op == "!";
+        }
     private:
         std::shared_ptr<Object> eval_program(std::vector<Statement *> stmts, std::shared_ptr<Enviroment> &env_);
         std::shared_ptr<Object> eval_statements(BlockStatement *bs, std::shared_ptr<Enviroment> &env_);
@@ -628,7 +632,9 @@ namespace ns
         else if (typeid(*node) == typeid(ImportStatement))
         {
             ImportStatement *is = (ImportStatement *)node;
-            std::ifstream file("../../samples/" + is->getPath());
+            std::filesystem::path cp=std::filesystem::current_path();
+            auto absolute_path=cp.concat("/samples/"+is->getPath());
+            std::ifstream file(absolute_path);
             if (!file.is_open())
             {
                 return std::make_shared<Error>("compile error,cannot find path `" + is->getPath() + "` .");
@@ -664,7 +670,7 @@ namespace ns
             return eval_new_expression(ne, env_);
         }
         else
-            return NULL;
+            return std::make_shared<Error>("unknown statement :"+node->toString());
     }
 
     std::shared_ptr<Object> VM::eval_point_expression(Expression *left, Expression *right, std::shared_ptr<Enviroment> &env_)
@@ -776,7 +782,7 @@ namespace ns
     {
         auto left_ = eval(left, env_);
         bool b1 = is_true(left_.get());
-        if (op == "|" || op == "or")
+        if (op == "||" || op == "or")
         {
             if (b1)
                 return True;
@@ -784,7 +790,7 @@ namespace ns
             bool b2 = is_true(right_.get());
             return b2 ? True : False;
         }
-        else if (op == "&" || op == "and")
+        else if (op == "&&" || op == "and")
         {
             if (!b1)
                 return False;
@@ -792,6 +798,7 @@ namespace ns
             bool b2 = is_true(right_.get());
             return b2 ? True : False;
         }
+        return std::make_shared<Error>("暂不支持的逻辑运算符："+op);
     }
     std::shared_ptr<Object> VM::eval_until_expression(const Expression *condition, const BlockStatement *body, std::shared_ptr<Enviroment> &env_)
     {
@@ -1154,57 +1161,6 @@ namespace ns
         default:
             return std::make_shared<Error>("Unsupported numeric type");
         }
-        // if (op == "-")
-        // {
-        //     return std::make_shared<Integer>(num1->getValue() - num2->getValue());
-        // }
-        // else if (op == "+")
-        // {
-        //     return std::make_shared<Integer>(num1->getValue() + num2->getValue());
-        // }
-        // else if (op == "*")
-        // {
-        //     return std::make_shared<Integer>(num1->getValue() * num2->getValue());
-        // }
-        // else if (op == "/")
-        // {
-        //     if (num2->getValue() == 0)
-        //     {
-        //         return std::make_shared<Error>("dividor is 0 !");
-        //     }
-        //     else
-        //         return std::make_shared<Number>(num1->getValue() / num2->getValue());
-        // }
-        // else if (op == "%")
-        // {
-        //     return std::make_shared<Integer>(num1->getValue() % num2->getValue());
-        // }
-        // else if (op == ">")
-        // {
-        //     return num1->getValue() > num2->getValue() ? True : False;
-        // }
-        // else if (op == ">=")
-        // {
-        //     return num1->getValue() >= num2->getValue() ? True : False;
-        // }
-        // else if (op == "<")
-        // {
-        //     return num1->getValue() < num2->getValue() ? True : False;
-        // }
-        // else if (op == "<=")
-        // {
-        //     return num1->getValue() <= num2->getValue() ? True : False;
-        // }
-        // else if (op == "==")
-        // {
-        //     return num1->getValue() == num2->getValue() ? True : False;
-        // }
-        // else if (op == "!=")
-        // {
-        //     return num1->getValue() != num2->getValue() ? True : False;
-        // }
-        // else
-        //     return std::make_shared<Error>("Unknown operator `" + op + "` between integers!");
     }
 
     std::shared_ptr<Object> VM::eval_infix_expression(const Object *left, const std::string &op, const Object *right)
@@ -1238,14 +1194,31 @@ namespace ns
         const Object *right,
         std::shared_ptr<Enviroment> & env_)
     {
+        if(!isPrefixOp(op)){
+            return std::make_shared<Error>("Unknown prefix operator `" + op + "` !");
+        }
         if (op == "!")
             return eval_bang_operator_expression(right);
-        if (op != "-" && op != "+")
-            return std::make_shared<Error>("Unknown prefix operator `" + op + "` !");
-        int temp = (op == "-") ? -1 : 1;
+        int temp= 0;
+        if(op == "-"){
+            temp = -1;
+        }
+        else if(op == "+"){
+            temp = 1;
+        }
+        else if(op == "++"){
+            temp = 2;
+        }
+        else if(op == "--"){
+            temp = -2;
+        }
         if (auto *val = dynamic_cast<const Int8 *>(right))
         {
-            return std::make_shared<Int8>(temp * val->getValue());
+            if(temp == 2){
+            //    env_->set()
+               return std::make_shared<Int8>(val->getValue()+1);
+            }
+            else return std::make_shared<Int8>(temp * val->getValue());
         }
         else if (auto *val = dynamic_cast<const Int16 *>(right))
         {

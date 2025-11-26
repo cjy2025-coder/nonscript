@@ -214,6 +214,7 @@ namespace ns
         startCol = col;
 
         // 跳过注释
+        lineCmd:;
         while (ch == '#')
         {
             skipCommand();
@@ -232,7 +233,9 @@ namespace ns
             startRow = row;
             startCol = col;
         }
-
+        if(ch == '#'){
+            goto lineCmd;
+        }
         Token t;
         switch (ch)
         {

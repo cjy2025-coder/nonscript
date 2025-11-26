@@ -19,6 +19,8 @@ namespace ns
             return Priority::ASSIGN;
         case TokenType::EQ:
         case TokenType::NEQ:
+        case TokenType::AND:
+        case TokenType::OR:
             return Priority::EQUAL;
         case TokenType::LT:
         case TokenType::GT:
