@@ -4,7 +4,7 @@
 #include "enviroment.h"
 #include <sstream>
 #include <fstream>
-#include<filesystem>
+#include <filesystem>
 namespace ns
 {
     enum class TypeRank
@@ -16,6 +16,68 @@ namespace ns
         Float32,
         Float64
     };
+    TypeRank getTypeRank(const Number *num);
+    std::shared_ptr<Number> promoteTo(const Number *num, TypeRank targetRank);
+    std::pair<std::shared_ptr<Number>, std::shared_ptr<Number>>
+    promoteTypes(const Number *left, const Number *right);
+    class VM
+    {
+    private:
+        Parser *parser = NULL;
+        mutable std::shared_ptr<Enviroment> env;
+        std::string dir = "";
+    private:
+        bool is_error(const Object *obj)
+        {
+            return typeid(*obj) == typeid(Error);
+        }
+        bool is_logic_operator(std::string op)
+        {
+            return op == "||" || op == "or" || op == "&&" || op == "and";
+        }
+
+        bool is_true(const Object *obj);
+
+    public:
+        VM() : env(new Enviroment()) {}
+        std::shared_ptr<Object> eval(std::string source);
+        std::shared_ptr<Object> eval(std::string source, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval(const AstNode *node, std::shared_ptr<Enviroment> &env_);
+
+    private:
+        bool isPrefixOp(std::string op)
+        {
+            return op == "+" || op == "-" || op == "++" || op == "--" || op == "!";
+        }
+
+    private:
+        std::shared_ptr<Object> eval_program(std::vector<Statement *> stmts, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_statements(BlockStatement *bs, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_for_loop(const ForLoop *stmt, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_throw_statement(const ThrowStatement *stmt, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_try_catch_statement(const TryCatchStatement *stmt, std::shared_ptr<Enviroment> &env_);
+        std::vector<std::shared_ptr<Object>> eval_expressions(const std::vector<std::unique_ptr<Expression>> &args, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> apply_func(const Object *f, std::vector<std::shared_ptr<Object>> &args);
+        std::shared_ptr<Enviroment> extend_func_env(Func *fn, std::vector<std::shared_ptr<Object>> &args);
+        std::shared_ptr<Object> eval_prefix_expression(const std::string &op, const Object *right, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_bang_operator_expression(const Object *right);
+        std::shared_ptr<Object> eval_infix_expression(const Object *left, const std::string &op, const Object *right);
+        std::shared_ptr<Object> eval_number_infix_expression(const Number *left, const std::string op, const Number *right);
+        std::shared_ptr<Object> eval_boolean_infix_expression(const Object *left, const std::string op, const Object *right);
+        std::shared_ptr<Object> eval_string_infix_expression(const Object *left, const std::string op, const Object *right);
+        std::shared_ptr<Object> eval_assign_expression(Expression *left, Expression *right, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_index_expression(Object *arr, Object *index);
+        std::shared_ptr<Object> eval_if_expression(IfExpression *ie, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_until_expression(const Expression *condition, const BlockStatement *body, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_while_expression(Expression *condition, BlockStatement *body, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_logic_expression(Expression *left, const std::string &op, Expression *right, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_new_expression(const NewExpression *e, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_point_expression(Expression *left, Expression *right, std::shared_ptr<Enviroment> &env_);
+        std::shared_ptr<Object> eval_switch_expression(const SwitchExpression *expr, std::shared_ptr<Enviroment> &env_);
+    };
+
+
+
     TypeRank getTypeRank(const Number *num)
     {
         switch (num->getType())
@@ -35,6 +97,52 @@ namespace ns
         default:
             return TypeRank::Int32; // 默认
         }
+    }
+    std::pair<std::shared_ptr<Number>, std::shared_ptr<Number>>
+    promoteTypes(const Number *left, const Number *right)
+    {
+        auto leftRank = getTypeRank(left);
+        auto rightRank = getTypeRank(right);
+        auto targetRank = std::max(leftRank, rightRank);
+
+        return {promoteTo(left, targetRank), promoteTo(right, targetRank)};
+    }
+    bool VM::is_true(const Object *obj)
+    {
+        if (!obj)
+            return false;
+        else if (obj == null.get())
+            return false;
+        else if (obj == True.get())
+            return true;
+        else if (obj == False.get())
+            return false;
+        else if (auto *value = dynamic_cast<const Int8 *>(obj))
+        {
+            return value->getValue() != 0;
+        }
+        else if (auto *value = dynamic_cast<const Int16 *>(obj))
+        {
+            return value->getValue() != 0;
+        }
+        else if (auto *value = dynamic_cast<const Int32 *>(obj))
+        {
+            return value->getValue() != 0;
+        }
+        else if (auto *value = dynamic_cast<const Int64 *>(obj))
+        {
+            return value->getValue() != 0;
+        }
+        else if (auto *value = dynamic_cast<const Float32 *>(obj))
+        {
+            return value->getValue() != 0.0f;
+        }
+        else if (auto *value = dynamic_cast<const Float64 *>(obj))
+        {
+            return value->getValue() != 0.0f;
+        }
+        else
+            return true;
     }
     std::shared_ptr<Number> promoteTo(const Number *num, TypeRank targetRank)
     {
@@ -156,105 +264,6 @@ namespace ns
 
         return nullptr;
     }
-    std::pair<std::shared_ptr<Number>, std::shared_ptr<Number>>
-    promoteTypes(const Number *left, const Number *right)
-    {
-        auto leftRank = getTypeRank(left);
-        auto rightRank = getTypeRank(right);
-        auto targetRank = std::max(leftRank, rightRank);
-
-        return {promoteTo(left, targetRank), promoteTo(right, targetRank)};
-    }
-    class VM
-    {
-    private:
-        Parser *parser = NULL;
-        mutable std::shared_ptr<Enviroment> env;
-        std::string dir = "";
-
-    private:
-        bool is_error(const Object *obj)
-        {
-            return typeid(*obj) == typeid(Error);
-        }
-        bool is_logic_operator(std::string op)
-        {
-            return op == "||" || op == "or" || op == "&&" || op == "and";
-        }
-
-        bool is_true(const Object *obj)
-        {
-            if (!obj)
-                return false;
-            else if (obj == null.get())
-                return false;
-            else if (obj == True.get())
-                return true;
-            else if (obj == False.get())
-                return false;
-            else if (auto *value = dynamic_cast<const Int8 *>(obj))
-            {
-                return value->getValue() != 0;
-            }
-            else if (auto *value = dynamic_cast<const Int16 *>(obj))
-            {
-                return value->getValue() != 0;
-            }
-            else if (auto *value = dynamic_cast<const Int32 *>(obj))
-            {
-                return value->getValue() != 0;
-            }
-            else if (auto *value = dynamic_cast<const Int64 *>(obj))
-            {
-                return value->getValue() != 0;
-            }
-            else if (auto *value = dynamic_cast<const Float32 *>(obj))
-            {
-                return value->getValue() != 0.0f;
-            }
-            else if (auto *value = dynamic_cast<const Float64 *>(obj))
-            {
-                return value->getValue() != 0.0f;
-            }
-            else
-                return true;
-        }
-
-    public:
-        VM() : env(new Enviroment()) {}
-        std::shared_ptr<Object> eval(std::string source);
-        std::shared_ptr<Object> eval(std::string source, std::shared_ptr<Enviroment> &env_);
-        std::shared_ptr<Object> eval(const AstNode *node, std::shared_ptr<Enviroment> &env_);
-    private:
-        bool isPrefixOp(std::string op){
-            return op == "+" || op == "-" || op == "++" || op == "--" || op == "!";
-        }
-    private:
-        std::shared_ptr<Object> eval_program(std::vector<Statement *> stmts, std::shared_ptr<Enviroment> &env_);
-        std::shared_ptr<Object> eval_statements(BlockStatement *bs, std::shared_ptr<Enviroment> &env_);
-        std::shared_ptr<Object> eval_for_loop(const ForLoop *stmt, std::shared_ptr<Enviroment> &env_);
-        std::shared_ptr<Object> eval_throw_statement(const ThrowStatement *stmt, std::shared_ptr<Enviroment> &env_);
-        std::shared_ptr<Object> eval_try_catch_statement(const TryCatchStatement *stmt, std::shared_ptr<Enviroment> &env_);
-        std::vector<std::shared_ptr<Object>> eval_expressions(const std::vector<std::unique_ptr<Expression>> &args, std::shared_ptr<Enviroment> &env_);
-        std::shared_ptr<Object> apply_func(const Object *f, std::vector<std::shared_ptr<Object>> &args);
-        std::shared_ptr<Enviroment> extend_func_env(Func *fn, std::vector<std::shared_ptr<Object>> &args);
-        std::shared_ptr<Object> eval_prefix_expression(const std::string &op, const Object *right,std::shared_ptr<Enviroment> & env_);
-        std::shared_ptr<Object> eval_bang_operator_expression(const Object *right);
-        std::shared_ptr<Object> eval_infix_expression(const Object *left, const std::string &op, const Object *right);
-        std::shared_ptr<Object> eval_number_infix_expression(const Number *left, const std::string op, const Number *right);
-        std::shared_ptr<Object> eval_boolean_infix_expression(const Object *left, const std::string op, const Object *right);
-        std::shared_ptr<Object> eval_string_infix_expression(const Object *left, const std::string op, const Object *right);
-        std::shared_ptr<Object> eval_assign_expression(Expression *left, Expression *right, std::shared_ptr<Enviroment> &env_);
-        std::shared_ptr<Object> eval_index_expression(Object *arr, Object *index);
-        std::shared_ptr<Object> eval_if_expression(IfExpression *ie, std::shared_ptr<Enviroment> &env_);
-        std::shared_ptr<Object> eval_until_expression(const Expression *condition, const BlockStatement *body, std::shared_ptr<Enviroment> &env_);
-        std::shared_ptr<Object> eval_while_expression(Expression *condition, BlockStatement *body, std::shared_ptr<Enviroment> &env_);
-        std::shared_ptr<Object> eval_logic_expression(Expression *left, const std::string &op, Expression *right, std::shared_ptr<Enviroment> &env_);
-        std::shared_ptr<Object> eval_new_expression(const NewExpression *e, std::shared_ptr<Enviroment> &env_);
-        std::shared_ptr<Object> eval_point_expression(Expression *left, Expression *right, std::shared_ptr<Enviroment> &env_);
-        std::shared_ptr<Object> eval_switch_expression(const SwitchExpression *expr, std::shared_ptr<Enviroment> &env_);
-    };
-
     std::shared_ptr<Object> VM::eval(std::string source, std::shared_ptr<Enviroment> &env_)
     {
         ns::Lexer lexer(source, "example.ss");
@@ -280,7 +289,7 @@ namespace ns
         auto &vars = stmt->getVariables();
         auto condition = stmt->getCondtion();
         auto &actions = stmt->getActions();
-        auto body=stmt->getBody();
+        auto body = stmt->getBody();
         auto extend_env = std::make_shared<Enviroment>(env_);
         for (const auto &var : vars)
         {
@@ -291,26 +300,33 @@ namespace ns
             }
             extend_env->set(var->var->getLiteral(), obj);
         }
-        while(true){
-            auto con=eval(condition,extend_env);
-            if(is_error(con.get())){
+        while (true)
+        {
+            auto con = eval(condition, extend_env);
+            if (is_error(con.get()))
+            {
                 return con;
             }
-            try{
-                if(!is_true(con.get())){
+            try
+            {
+                if (!is_true(con.get()))
+                {
                     break;
                 }
             }
-            catch(Exception e){
-                
+            catch (Exception e)
+            {
             }
-            auto temp=eval(body,extend_env);
-            if(is_error(temp.get())){
+            auto temp = eval(body, extend_env);
+            if (is_error(temp.get()))
+            {
                 return temp;
             }
-            for(const auto & action : actions){
-                auto _=eval(action.get(),extend_env);
-                if(is_error(_.get())){
+            for (const auto &action : actions)
+            {
+                auto _ = eval(action.get(), extend_env);
+                if (is_error(_.get()))
+                {
                     return _;
                 }
             }
@@ -515,7 +531,7 @@ namespace ns
         {
             return eval_try_catch_statement(stmt, env_);
         }
-                else if (auto *stmt = dynamic_cast<const ForLoop *>(node))
+        else if (auto *stmt = dynamic_cast<const ForLoop *>(node))
         {
             return eval_for_loop(stmt, env_);
         }
@@ -602,7 +618,7 @@ namespace ns
             auto op = ps->getOperator();
             if (is_error(right.get()))
                 return right;
-            return eval_prefix_expression(op, right.get(),env_);
+            return eval_prefix_expression(op, right.get(), env_);
         }
         else if (typeid(*node) == typeid(NewExpression))
         {
@@ -632,8 +648,8 @@ namespace ns
         else if (typeid(*node) == typeid(ImportStatement))
         {
             ImportStatement *is = (ImportStatement *)node;
-            std::filesystem::path cp=std::filesystem::current_path();
-            auto absolute_path=cp.concat("/samples/"+is->getPath());
+            std::filesystem::path cp = std::filesystem::current_path();
+            auto absolute_path = cp.concat("/samples/" + is->getPath());
             std::ifstream file(absolute_path);
             if (!file.is_open())
             {
@@ -670,7 +686,7 @@ namespace ns
             return eval_new_expression(ne, env_);
         }
         else
-            return std::make_shared<Error>("unknown statement :"+node->toString());
+            return std::make_shared<Error>("unknown statement :" + node->toString());
     }
 
     std::shared_ptr<Object> VM::eval_point_expression(Expression *left, Expression *right, std::shared_ptr<Enviroment> &env_)
@@ -798,7 +814,7 @@ namespace ns
             bool b2 = is_true(right_.get());
             return b2 ? True : False;
         }
-        return std::make_shared<Error>("暂不支持的逻辑运算符："+op);
+        return std::make_shared<Error>("暂不支持的逻辑运算符：" + op);
     }
     std::shared_ptr<Object> VM::eval_until_expression(const Expression *condition, const BlockStatement *body, std::shared_ptr<Enviroment> &env_)
     {
@@ -1190,35 +1206,42 @@ namespace ns
     }
 
     std::shared_ptr<Object> VM::eval_prefix_expression(
-        const std::string &op, 
+        const std::string &op,
         const Object *right,
-        std::shared_ptr<Enviroment> & env_)
+        std::shared_ptr<Enviroment> &env_)
     {
-        if(!isPrefixOp(op)){
+        if (!isPrefixOp(op))
+        {
             return std::make_shared<Error>("Unknown prefix operator `" + op + "` !");
         }
         if (op == "!")
             return eval_bang_operator_expression(right);
-        int temp= 0;
-        if(op == "-"){
+        int temp = 0;
+        if (op == "-")
+        {
             temp = -1;
         }
-        else if(op == "+"){
+        else if (op == "+")
+        {
             temp = 1;
         }
-        else if(op == "++"){
+        else if (op == "++")
+        {
             temp = 2;
         }
-        else if(op == "--"){
+        else if (op == "--")
+        {
             temp = -2;
         }
         if (auto *val = dynamic_cast<const Int8 *>(right))
         {
-            if(temp == 2){
-            //    env_->set()
-               return std::make_shared<Int8>(val->getValue()+1);
+            if (temp == 2)
+            {
+                //    env_->set()
+                return std::make_shared<Int8>(val->getValue() + 1);
             }
-            else return std::make_shared<Int8>(temp * val->getValue());
+            else
+                return std::make_shared<Int8>(temp * val->getValue());
         }
         else if (auto *val = dynamic_cast<const Int16 *>(right))
         {

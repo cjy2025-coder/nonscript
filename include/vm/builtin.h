@@ -6,7 +6,7 @@ namespace ns
     std::shared_ptr<Object> print(std::vector<std::shared_ptr<Object>> &args)
     {
         if (args.empty())
-            return std::make_shared<Error>("Wrong number of arguments,expected more than 0!");
+            return std::make_shared<Error>("Expected more arguments instead of got 0!");
         for (size_t i = 0; i < args.size(); i++)
             std::cout << args[i]->toBuf();
         return null;
@@ -15,7 +15,7 @@ namespace ns
     std::shared_ptr<Object> scan(std::vector<std::shared_ptr<Object>> &args)
     {
         if (args.empty())
-            return std::make_shared<Error>("Wrong number of arguments,expected more than 0!");
+            return std::make_shared<Error>("Expected more arguments instead of got 0!");
         for (size_t i = 0; i < args.size(); i++)
         {
             if (typeid(*(args[i].get())) == typeid(Int8))
@@ -68,7 +68,7 @@ namespace ns
             }
             else
             {
-                return std::make_shared<Error>("compile error,cannot get a stdin-stream for an unknown type");
+                return std::make_shared<Error>("Unexpected in-stream Object type!");
             }
         }
         return null;
@@ -138,10 +138,10 @@ namespace ns
                 Array *arr = (Array *)at;
                 return std::make_shared<Int64>(arr->size());
             }
-            return std::make_shared<Error>("compile error,wrong type for argument 1,expected type `Array` or `String` .");
+            return std::make_shared<Error>("Unexpected type of arg 1,expected `Array` or `String` instead.");
         }
         else
-            return std::make_shared<Error>("compile error,wrong number of arguments for bulitin function `length()` ,expected to be 1.");
+            return std::make_shared<Error>("Expected 1 argument for builtin function _length instead of got "+std::to_string(args.size())+" !");
     }
 
     std::shared_ptr<Object> __pop(std::vector<std::shared_ptr<Object>> &args)
@@ -150,12 +150,12 @@ namespace ns
         {
             auto at = args[0].get();
             if (typeid(*at) != typeid(Array))
-                return std::make_shared<Error>("compile error,wrong type for argument 1,expected type `Array` .");
+                return std::make_shared<Error>("Unexpected type of arg 1,expected `Array` instead.");
             Array *arr = (Array *)(at);
             return arr->pop();
         }
         else
-            return std::make_shared<Error>("compile error,wrong number of arguments for bulitin function `pop()` ,expected to be 1.");
+            return std::make_shared<Error>("Expected 1 argument for builtin function _pop instead of got "+std::to_string(args.size())+" !");
     }
 
     std::map<std::string, BuiltinFunction> BUILTINS = {

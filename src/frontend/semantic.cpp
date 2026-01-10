@@ -106,6 +106,8 @@ namespace ns
             return "null";
         case DataType::CLASS:
             return "class";
+        case DataType::STRING:
+            return "string";
         case DataType::OBJECT:
             return "object";
         case DataType::BOOLEAN:
@@ -147,8 +149,8 @@ namespace ns
         auto symbol = find_symbol(ident->getLiteral());
         if (!symbol) // 没有找到这个标识符
         {
-            raiseError(ErrorType::SEMANTIC_ERROR, "undefined symbol: " + ident->toString(), ident->getToken().getLocation());
-            return NULL;
+            raiseError(ErrorType::SEMANTIC_ERROR, "undefined symbol: " + ident->getLiteral(), ident->getToken().getLocation());
+            return createTypeInfo(DataType::ERROR);
         }
         return symbol->type_info;
     }
@@ -159,34 +161,52 @@ namespace ns
         if (!expression_type)
         {
             raiseError(ErrorType::SEMANTIC_ERROR, "invalid expression: " + expression->getLiteral(), expression->getToken().getLocation());
-            return nullptr;
+            return createTypeInfo(DataType::ERROR);
+        }
+        else if (expression_type->baseType == DataType::ERROR)
+        {
+            return expression_type;
         }
         auto op = expr->getOperator();
         if ((op == "+" || op == "-") && is_number(expression_type->baseType))
         {
             return expression_type;
         }
-        else if(op == "!" && is_bool(expression_type->baseType)){
+        else if (op == "!" && is_bool(expression_type->baseType))
+        {
             return expression_type;
         }
         raiseError(ErrorType::SEMANTIC_ERROR, "invalid expression: " + expression->getLiteral(), expression->getToken().getLocation());
-        return nullptr;
+        return createTypeInfo(DataType::ERROR);
     }
     TypeInfo *SemanticAnalyzer::check_infix_expression(InfixExpression *expr)
     {
         auto left = expr->getLeft();
         auto left_type = check_expression(left); // 计算左侧表达式
+        bool hasError = false;
         if (!left_type)
         {
             raiseError(ErrorType::SEMANTIC_ERROR, "invalid expression: " + expr->getLeft()->toString(), expr->getLeft()->getToken().getLocation());
-            return nullptr;
+            hasError = true;
+        }
+        else if (left_type->baseType == DataType::ERROR)
+        {
+            hasError = true;
         }
         auto right = expr->getRight();
         auto right_type = check_expression(right); // 计算右侧表达式
         if (!right_type)
         {
             raiseError(ErrorType::SEMANTIC_ERROR, "invalid expression: " + expr->getRight()->toString(), expr->getRight()->getToken().getLocation());
-            return nullptr;
+            hasError = true;
+        }
+        else if (right_type->baseType == DataType::ERROR)
+        {
+            hasError = true;
+        }
+        if (hasError)
+        {
+            _MARK_ERROR
         }
         auto op = expr->getOperator();
         if (is_arithmetic_op(op))
@@ -198,12 +218,12 @@ namespace ns
                     if (is_float(left_type->baseType))
                     {
                         raiseError(ErrorType::SEMANTIC_ERROR, "Modulo operation requires integer types" + left->getLiteral(), left->getToken().getLocation());
-                        return nullptr;
+                        return createTypeInfo(DataType::ERROR);
                     }
                     if (is_float(right_type->baseType))
                     {
                         raiseError(ErrorType::SEMANTIC_ERROR, "Modulo operation requires integer types" + right->getLiteral(), right->getToken().getLocation());
-                        return nullptr;
+                        return createTypeInfo(DataType::ERROR);
                     }
                 }
                 return get_wider_numeric_type(left_type, right_type);
@@ -215,64 +235,116 @@ namespace ns
                     return createTypeInfo(DataType::STRING);
                 }
                 raiseError(ErrorType::SEMANTIC_ERROR, "unsupported operation + between ", right->getToken().getLocation());
-                return nullptr;
+                return createTypeInfo(DataType::ERROR);
             }
         }
-        else if(is_logic_op(op)){
-             if(is_bool(left_type->baseType) && is_bool(right_type->baseType)){
+        else if (is_logic_op(op))
+        {
+            if (is_bool(left_type->baseType) && is_bool(right_type->baseType))
+            {
                 return left_type;
-             }
+            }
         }
         // else if(op == "."){
         //     if(left_type->baseType == DataType::OBJECT)
         // }
-        return nullptr;
+        return createTypeInfo(DataType::ERROR);
     }
     TypeInfo *SemanticAnalyzer::check_index_expression(IndexExpression *expr)
     {
         auto array = expr->getLeft();
         auto type = check_expression(array);
-        if (!type)
+        if (!type || type->baseType == DataType::ERROR)
         {
-            return NULL;
+            _MARK_ERROR
         }
         if (type->baseType != DataType::ARRAY)
         {
-            raiseError(ErrorType::SEMANTIC_ERROR, "expect array instead of got type: " + type_to_string(type->baseType), array->getToken().getLocation());
-            return NULL;
+            raiseError(ErrorType::SEMANTIC_ERROR,
+                       "expect an array instead of got type: " + type_to_string(type->baseType),
+                       expr->getToken().getLocation());
+            _MARK_ERROR
         }
         auto idx = expr->getIndex();
         auto type_ = check_expression(idx);
-        if (!type_)
+        if (!type_ || type->baseType == DataType::ERROR)
         {
-            return NULL;
+            _MARK_ERROR
         }
         if (type_->baseType != DataType::INT8 && type_->baseType != DataType::INT16 && type_->baseType != DataType::INT32 && type_->baseType != DataType::INT64)
         {
-            raiseError(ErrorType::SEMANTIC_ERROR, "expect an integer as index instead of got type: " + type_to_string(type_->baseType), idx->getToken().getLocation());
-            return NULL;
+            raiseError(ErrorType::SEMANTIC_ERROR,
+                       "expect an integer as index instead of got type: " + type_to_string(type_->baseType),
+                       idx->getToken().getLocation());
+            _MARK_ERROR
         }
-        // try{
-        //     auto elment_type=
-        // }
+        // 尝试获取元素的类型，以及检查下标是否越界
+        // 下标是整数常量
+        int64_t _ = -1;
+        bool static_check = true;
+        if (auto *constant_idx = dynamic_cast<I8Literal *>(idx))
+        {
+            _ = constant_idx->getValue();
+        }
+        else if (auto *constant_idx = dynamic_cast<I16Literal *>(idx))
+        {
+            _ = constant_idx->getValue();
+        }
+        else if (auto *constant_idx = dynamic_cast<I32Literal *>(idx))
+        {
+            _ = constant_idx->getValue();
+        }
+        else if (auto *constant_idx = dynamic_cast<I64Literal *>(idx))
+        {
+            _ = constant_idx->getValue();
+        }
+        else
+        {
+            static_check = false;
+        }
+        // 无法静态检查时，临时返回一个类型
+        if (!static_check)
+            return createTypeInfo(DataType::UNKNOWN);
+        ArrayDetail arrayDetail = std::get<ArrayDetail>(type->detail);
+        // 对下标进行静态检查
+        if (_ < 0 || _ >= arrayDetail.size)
+        {
+            raiseError(ErrorType::SEMANTIC_ERROR,
+                       "array index " + std::to_string(_) +
+                           " out of bounds [0, " + std::to_string(arrayDetail.size - 1) + "]",
+                       idx->getToken().getLocation());
+            _MARK_ERROR
+        }
+        else
+        {
+            return arrayDetail.elems_types[_];
+        }
     }
     TypeInfo *SemanticAnalyzer::check_array_literal(ArrayLiteral *arr)
     {
         TypeInfo *typeInfo = createTypeInfo(DataType::ARRAY);
-        std::vector<DataType> elemTypes = {};
+        std::vector<TypeInfo *> elemTypes = {};
         int size = 0;
         std::vector<std::unique_ptr<Expression>> &elements = arr->getElems();
         size = elements.size();
+        bool hasError = false;
         for (int i = 0; i < size; i++)
         {
             auto elemType = check_expression(elements[i].get());
             if (!elemType)
-                return nullptr;
-            elemTypes.emplace_back(elemType->baseType);
+            {
+                hasError = true;
+                continue;
+            }
+            elemTypes.emplace_back(elemType);
+        }
+        if (hasError)
+        {
+            _MARK_ERROR
         }
         ArrayDetail arrayDetail = {};
-        arrayDetail.size = size;
-        arrayDetail.elems_types = elemTypes;
+        arrayDetail.size = size;             // 数组长度信息
+        arrayDetail.elems_types = elemTypes; // 数组各个元素的类型
         typeInfo->detail = arrayDetail;
         return typeInfo;
     }
@@ -280,19 +352,25 @@ namespace ns
     {
         auto stmts = stmt->value();
         TypeInfo *typeInfo = nullptr;
+        bool hasError=false;
         for (auto &stmt : stmts)
         {
             typeInfo = check_statement(stmt);
-            if (!typeInfo)
-                return nullptr;
+            if (_SEMANTIC_ERROR(typeInfo)){
+                hasError=true;
+                continue;
+            }
             if (typeid(*stmt) == typeid(ReturnStatement))
                 return typeInfo;
+        }
+        if(hasError){
+            _MARK_ERROR
         }
         return createTypeInfo(DataType::NONE);
     }
     TypeInfo *SemanticAnalyzer::check_param(Expression *param)
     {
-        if (typeid(*param) == typeid(Ident))
+        if (typeid(*param) == typeid(Ident)) // 形参无默认值
         {
             Ident *ident = (Ident *)param;
             auto t1 = ident->getType();
@@ -305,19 +383,19 @@ namespace ns
             push_symbol(name, new_symbol);
             return typeInfo;
         }
-        else if (typeid(*param) == typeid(InfixExpression))
+        else if (typeid(*param) == typeid(InfixExpression)) // 处理形参有默认值的情况
         {
             InfixExpression *infixExpression = (InfixExpression *)param;
             Ident *ident = (Ident *)infixExpression->getLeft();
             auto right = infixExpression->getRight();
             auto right_type_info = check_expression(right);
-            if (!right_type_info)
-                return nullptr;
+            if (_SEMANTIC_ERROR(right_type_info))
+                _MARK_ERROR
             TypeInfo *typeInfo = createTypeInfo(string_to_type(ident->getType()));
             if (right_type_info->baseType != typeInfo->baseType)
             {
                 raiseError(ErrorType::SEMANTIC_ERROR, "unmatch type: " + ident->getType(), ident->getToken().getLocation());
-                return nullptr;
+                _MARK_ERROR
             }
             std::string name = ident->getLiteral();
             Symbol *new_symbol = new Symbol();
@@ -332,9 +410,15 @@ namespace ns
     {
         auto func = expr->getFunc();
         auto typeInfo = check_expression(expr->getFunc());
+        if (_SEMANTIC_ERROR(typeInfo))
+        {
+            _MARK_ERROR
+        }
         if (typeInfo->baseType != DataType::FUNCTION)
         {
-            raiseError(ErrorType::SEMANTIC_ERROR, "expect function " + func->getLiteral(), func->getToken().getLocation());
+            raiseError(ErrorType::SEMANTIC_ERROR,
+                       "expect function " + func->getLiteral(),
+                       func->getToken().getLocation());
             return nullptr;
         }
         std::vector<std::unique_ptr<Expression>> &args = expr->getArgs();
@@ -342,7 +426,9 @@ namespace ns
         auto arg_types = func_detail.param_types;
         if (args.size() != arg_types.size())
         {
-            raiseError(ErrorType::SEMANTIC_ERROR, "no match arguments for function: " + func->getLiteral(), func->getToken().getLocation());
+            raiseError(ErrorType::SEMANTIC_ERROR,
+                       "no match arguments for function: " + func->getLiteral(),
+                       func->getToken().getLocation());
             return nullptr;
         }
         for (int i = 0; i < args.size(); i++)
@@ -350,7 +436,9 @@ namespace ns
             auto type = check_expression(args[i].get());
             if (type->baseType != arg_types[i])
             {
-                raiseError(ErrorType::SEMANTIC_ERROR, "unmatch type: " + args[i]->getLiteral(), args[i]->getToken().getLocation());
+                raiseError(ErrorType::SEMANTIC_ERROR,
+                           "unmatch type: " + args[i]->getLiteral(),
+                           args[i]->getToken().getLocation());
                 return nullptr;
             }
         }
@@ -360,23 +448,32 @@ namespace ns
     {
         TypeInfo *typeInfo = createTypeInfo(DataType::FUNCTION);
         auto params = stmt->getParams();
+        bool hasError = false;
         enter_scope(); // 进入函数的局部变量作用域
         FuncDetail funcDetail = {};
         for (auto &param : params)
         {
             TypeInfo *info = check_param(param.get());
-            if (!info)
-                return nullptr;
+            if (_SEMANTIC_ERROR(info))
+            {
+                hasError = true;
+                continue;
+            }
             funcDetail.param_types.push_back(info->baseType);
         }
         auto body = stmt->getBody();
         auto t = check_block_statement(body);
-        if (!t)
-            return nullptr;
+        if (_SEMANTIC_ERROR(t))
+        {
+            hasError = true;
+        }
+        if (hasError)
+        {
+            _MARK_ERROR
+        }
         funcDetail.return_type = t->baseType;
         typeInfo->detail = funcDetail;
         exit_scope(); // 离开局部变量作用域
-
         // 将函数名写入符号表
         std::string name = stmt->getLiteral();
         Symbol *new_symbol = new Symbol();
@@ -390,19 +487,29 @@ namespace ns
     {
         TypeInfo *typeInfo = createTypeInfo(DataType::FUNCTION);
         auto params = expr->getParams();
+        bool hasError = false;
         enter_scope(); // 进入函数的局部变量作用域
         FuncDetail funcDetail = {};
         for (auto &param : params)
         {
             TypeInfo *info = check_param(param.get());
-            if (!info)
-                return nullptr;
+            if (_SEMANTIC_ERROR(info))
+            {
+                hasError = true;
+                continue;
+            }
             funcDetail.param_types.push_back(info->baseType);
         }
         auto body = expr->getBody();
         auto t = check_block_statement(body);
-        if (!t)
-            return nullptr;
+        if (_SEMANTIC_ERROR(t))
+        {
+            hasError = true;
+        }
+        if (hasError)
+        {
+            _MARK_ERROR
+        }
         funcDetail.return_type = t->baseType;
         typeInfo->detail = funcDetail;
         exit_scope(); // 离开局部变量作用域
@@ -411,41 +518,51 @@ namespace ns
     TypeInfo *SemanticAnalyzer::check_if_expression(IfExpression *expr)
     {
         auto condition = expr->getCondition();
-        if (check_expression(condition) == nullptr)
+        bool hasError=false;
+        if (_SEMANTIC_ERROR(check_expression(condition)))
         {
-            return nullptr;
+           hasError=true;
         }
         auto consequence = expr->getConsequence();
-        if (check_statement(consequence) == nullptr)
+        if (_SEMANTIC_ERROR(check_statement(consequence)))
         {
-            return nullptr;
+            hasError=true;
         }
         auto alternative = expr->getAlternative();
         if (alternative != NULL)
         {
-            if (check_statement(alternative) == nullptr)
+            if (_SEMANTIC_ERROR(check_statement(alternative)))
             {
-                return nullptr;
+               hasError=true;
             }
+        }
+        if(hasError){
+            _MARK_ERROR
         }
         return createTypeInfo(DataType::NONE);
     }
     TypeInfo *SemanticAnalyzer::check_while_expression(WhileExpression *expr)
     {
         auto condition = expr->getCondition();
-        if (check_expression(condition) == nullptr)
+        bool hasError=false;
+        if (_SEMANTIC_ERROR(check_expression(condition)))
         {
-            return nullptr;
+            hasError=true;
         }
         auto body = expr->getBody();
-        if (check_statement(body) == nullptr)
+        if (_SEMANTIC_ERROR(check_statement(body)))
         {
-            return nullptr;
+            hasError=true;
+        }
+        if(hasError){
+            _MARK_ERROR
         }
         return createTypeInfo(DataType::NONE);
     }
     TypeInfo *SemanticAnalyzer::check_expression(Expression *expr)
     {
+        if (!expr)
+            return nullptr;
         if (typeid(*expr) == typeid(I8Literal))
             return createTypeInfo(DataType::INT8);
         else if (typeid(*expr) == typeid(I16Literal))
@@ -489,25 +606,29 @@ namespace ns
             return check_while_expression((WhileExpression *)expr);
         }
         else
-            return nullptr;
+            _MARK_ERROR
     }
     TypeInfo *SemanticAnalyzer::check_class_statement(ClassLiteral *stmt)
     {
         std::vector<std::unique_ptr<Ident>> &parents = stmt->getBaseClasses();
+        bool hasError=true;
         for (auto &parent : parents)
         {
-            if (check_expression(parent.get()) == nullptr)
+            if (_SEMANTIC_ERROR(check_expression(parent.get())))
             {
-                return nullptr;
+                hasError=true;
             }
         }
         auto &members = stmt->getMembers();
         for (auto &member : members)
         {
-            if (check_statement(member.declaration.get()) == nullptr)
+            if (_SEMANTIC_ERROR(check_statement(member.declaration.get())))
             {
-                return nullptr;
+                hasError=true;
             }
+        }
+        if(hasError){
+            _MARK_ERROR
         }
         return createTypeInfo(DataType::NONE);
     }
@@ -550,7 +671,7 @@ namespace ns
         else
         {
             raiseError(ErrorType::SEMANTIC_ERROR, "unsupport statement: " + stmt->toString(), stmt->getToken().getLocation());
-            return nullptr;
+            _MARK_ERROR
         }
     }
     int SemanticAnalyzer::check(Program *program)
@@ -558,7 +679,8 @@ namespace ns
         auto stmts = program->stmts;
         for (auto &stmt : stmts)
         {
-            if (!check_statement(stmt))
+            auto _ = check_statement(stmt);
+            if (_SEMANTIC_ERROR(_))
                 return 0;
         }
         return 1;
@@ -567,30 +689,42 @@ namespace ns
     TypeInfo *SemanticAnalyzer::check_declare_statement(DeclareStatement *stmt)
     {
         auto vars = stmt->getVars();
+        bool hasError = false;
         for (auto it = vars.begin(); it != vars.end(); it++)
         {
-            auto name = it->first->toString(); // 获取标识符名称
+            auto name = it->first->getLiteral(); // 获取标识符名称
             if (find_symbol(name))
             { // 变量已经被申明了
-                raiseError(ErrorType::SEMANTIC_ERROR, "redefined symbol: " + name, it->second->getToken().getLocation());
-                return nullptr;
+                raiseError(ErrorType::SEMANTIC_ERROR, "redefined symbol: " + name, it->first->getToken().getLocation());
+                hasError = true;
             }
             auto type = it->first->getType(); // 获取标识符类型
             auto expr = it->second;
-            TypeInfo *right_type = check_expression(expr);
-            if (!right_type)
-                return nullptr; // 解析赋值表达式出错
-            if (type != "any" && type_to_string(right_type->baseType) != type)
-            { // 类型不匹配
-                auto t = it->second->getToken();
-                raiseError(ErrorType::SEMANTIC_ERROR, "unmatch type: " + name, it->second->getToken().getLocation());
-                return nullptr;
+            TypeInfo *right_type = nullptr;
+            if (expr) // 有赋值则分析赋值表达式
+            {
+                right_type = check_expression(expr);
+                if (right_type->baseType == DataType::ERROR)
+                    hasError = true; // 解析赋值表达式出错
+                if (type != "any" && type_to_string(right_type->baseType) != type)
+                { // 类型不匹配,但是也无法数字兼容
+                    if (!is_number(right_type->baseType) && !is_number(string_to_type(type)))
+                    {
+                        auto t = it->second->getToken();
+                        raiseError(ErrorType::SEMANTIC_ERROR, "unmatch type: " + name, it->second->getToken().getLocation());
+                        hasError = true;
+                    }
+                }
             }
             Symbol *new_symbol = new Symbol();
             new_symbol->name = name;
             new_symbol->scope_level = current_scope;
             new_symbol->type_info = right_type;
             push_symbol(name, new_symbol);
+        }
+        if (hasError)
+        {
+            return createTypeInfo(DataType::ERROR);
         }
         return createTypeInfo(DataType::NONE);
     }

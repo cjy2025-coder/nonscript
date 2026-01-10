@@ -16,17 +16,19 @@ namespace ns
         std::vector<DataType> param_types;
         DataType return_type;
     } FuncDetail;
+    typedef struct _TypeInfo TypeInfo;
     typedef struct _ArrayDetail
     {
-        std::vector<DataType> elems_types;
+        std::vector<TypeInfo*> elems_types;
         int size;
     }ArrayDetail;
     typedef struct _TypeInfo{
         DataType baseType;
         std::variant<FuncDetail,ArrayDetail> detail;
     }TypeInfo;
-
     TypeInfo * createTypeInfo(DataType baseType_);
+    #define _SEMANTIC_ERROR(r) (!(r)) || ((r)->baseType == DataType::ERROR)
+    #define _MARK_ERROR return createTypeInfo(DataType::ERROR);
     typedef struct Symbol
     {
         TypeInfo * type_info;

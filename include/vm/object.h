@@ -33,7 +33,7 @@ namespace ns
     {
     protected:
         OBJECT type;
-
+        
     public:
         Object(const OBJECT &type_) : type(type_) {}
 

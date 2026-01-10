@@ -1,58 +1,88 @@
-#include <iostream>
 #include <fstream>
-#include <sstream>
-#include <vector>
+#include <iostream>
 #include <string>
-#include "vm/vm.h"
+#include <sstream>
+#include "frontend/parser.h"
+#include "frontend/lexer.h"
+#include "frontend/semantic.h"
+#ifdef _WIN32
+#include <windows.h>
+#else
+// 类 Unix 系统使用 ANSI 转义序列
+#define ANSI_COLOR_RED "\x1b[31m"
+#define ANSI_COLOR_RESET "\x1b[0m"
+#endif
 
-int main(int argc, char* argv[])
+// 重置控制台颜色的辅助函数
+void resetConsoleColor()
 {
-    std::string path="samples/example.ss";
-    
-    // 处理命令行参数
-    if (argc == 2) {
-        // 用法: ss code.ss
-        path = argv[1];
-    } 
-    // else if (argc == 3 && std::string(argv[1]) == "ss") {
-    //     // 用法: ss code.ss
-    //     path = argv[2];
-    // } 
-    // else {
-    //     // 显示用法信息
-    //     std::cerr << "用法: " << argv[0] << " <filename.ss>" << std::endl;
-    //     std::cerr << "或者: ss <filename.ss>" << std::endl;
-    //     std::cerr << "示例:" << std::endl;
-    //     std::cerr << "  " << argv[0] << " samples/example.ss" << std::endl;
-    //     std::cerr << "  ss samples/example.ss" << std::endl;
-    //     return 1;
-    // }
-    
-    // 确保文件以.ss结尾（可选）
-    if (path.size() < 3 || path.substr(path.size() - 3) != ".ss") {
-        std::cerr << "\033[33m" << "警告: 文件 '" << path << "' 可能不是SpringScript文件(.ss)" << "\033[0m" << std::endl;
-    }
-    
-    std::ifstream is(path);
-    if (!is.is_open())
+#ifdef _WIN32
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+#else
+    std::cout << ANSI_COLOR_RESET;
+#endif
+}
+
+// 设置控制台文本为红色的辅助函数
+void setConsoleRed()
+{
+#ifdef _WIN32
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_INTENSITY);
+#else
+    std::cout << ANSI_COLOR_RED;
+#endif
+}
+
+int main()
+{
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
+    std::ifstream stream("././samples/example.ss");
+    if (!stream)
     {
-        std::cerr << "\033[31m" << "错误: 无法打开文件 '" << path << "'，请确认文件存在且路径正确!" << "\033[0m" << std::endl;
-        return -1;
+        // 错误信息标红
+        setConsoleRed();
+        std::cout << "无法找到此文件！" << std::endl;
+        resetConsoleColor();
+        exit(-1);
     }
-    
     std::stringstream ss;
-    ss << is.rdbuf();
-    is.close();
+    ss << stream.rdbuf();
     std::string source = ss.str();
-    
-    ns::VM vm;
-    auto errors = vm.eval(source);
-    if(errors == nullptr) return -1;
-    if (typeid(*(errors.get())) == typeid(ns::Error))
+    ns::Lexer lexer(source, "example.ss");
+    ns::Token token;
+
+    std::vector<ns::Token> tokens;
+    while ((token = lexer.scan()).getType() != ns::TokenType::END)
     {
-        std::cerr << "\033[31m" << errors->toBuf() << "\033[0m" << std::endl;
+        tokens.push_back(token);
+    }
+    tokens.push_back(token);
+    ns::Parser parser(tokens);
+    parser.setLexer(&lexer);
+    std::unique_ptr<ns::Program> program = parser.parse();
+    if (!program)
+    {
+        auto e = parser.what();
+        // 错误信息标红
+        setConsoleRed();
+        std::cout << e->whats();
+        resetConsoleColor();
         return -1;
     }
-    
+    ns::SemanticAnalyzer * sa=new ns::SemanticAnalyzer(&lexer);
+    auto status=sa->check(program.get());
+    if(!status){
+        auto e = sa->what();
+        // 错误信息标红
+        setConsoleRed();
+        std::cout << e->whats();
+        resetConsoleColor();
+        return -1;        
+    }
     return 0;
 }

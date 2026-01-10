@@ -1003,18 +1003,17 @@ namespace ns
     class DeclareStatement : public Statement
     {
     public:
-        std::map<Ident *, Expression *> vars;
+        std::vector<std::pair<Ident*,Expression*>> vars;
         bool isVariable;
-
     public:
         DeclareStatement(const Token &t, bool isVariable_) : Statement(t), isVariable(isVariable_) {}
-        std::map<Ident *, Expression *> getVars() const
+        std::vector<std::pair<Ident*,Expression*>> getVars() const
         {
             return vars;
         }
         void add(Ident *id, Expression *e)
         {
-            vars[id] = e;
+            vars.push_back({id,e});
         }
         std::string toString() const override
         {

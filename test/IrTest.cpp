@@ -87,12 +87,9 @@ int main()
     //     return -1;
     // }
 
-    ns::IrGenerator ig;
-    auto irs = ig.generate(*(program.release()));
-    std::ofstream of;
-    of.open("example.tac", std::ios::out);
-    of << irs.toString();
-    of.close();
+    ns::TACGenerator ig;
+    ig.gen(program.release());
+    ig.save("example.tac");
     return 0;
 }
 

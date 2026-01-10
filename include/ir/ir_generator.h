@@ -3,22 +3,89 @@
 #include"frontend/ast.h"
 #include"frontend/semantic.h"
 namespace ns{
-    class IrGenerator{
-    private:
-          int  temp_counter=0;
-          FuncIR current_func;
-          std::unordered_map<std::string, Symbol *> symbol_table;
-    private:
-          std::string new_temp();
-          std::string visit(const Expression * expr);
-          std::string visit_infix_expression(const InfixExpression * expr);
-          std::string visit_prefix_expression(const PrefixExpression * expr);
-          std::string visit_simple_expression(const Expression * expr);
-    private:
-          
-    public:
-          void loadSymbols(std::unordered_map<std::string, Symbol *> symbols){symbol_table=symbols;}
-          FuncIR generate(const Program& program); 
-          FuncIR generate_declare_statement(const DeclareStatement * stmt);   
-    };
+class TACGenerator {
+private:
+    TACContext ctx; 
+private:
+    int alloc_size(std::string type){
+        if(type == "int8"){
+            return 1;
+        }
+        else if(type == "int16"){
+            return 2;
+        }
+        else if(type == "int32"){
+            return 4;
+        }
+        else if(type == "int64"){
+            return 8;
+        }
+        else if(type == "float32"){
+            return 4;
+        }
+        else if(type == "float64"){
+            return 8;
+        }
+        else return 8;//其余情况，统一分配8字节
+    }
+public:
+    void save(std::string path){
+        ctx.save(path);
+    }
+public:
+    std::string genExpr(Expression* expr) {
+        if(auto * _=dynamic_cast<Ident*>(expr)){
+           return "$"+expr->getLiteral();
+        }
+        else if(auto * _=dynamic_cast<I8Literal*>(expr)){
+           return "#"+expr->getLiteral();
+        }
+                else if(auto * _=dynamic_cast<I16Literal*>(expr)){
+           return "#"+expr->getLiteral();
+        }
+                else if(auto * _=dynamic_cast<I32Literal*>(expr)){
+           return "#"+expr->getLiteral();
+        }
+                else if(auto * _=dynamic_cast<I64Literal*>(expr)){
+           return "#"+expr->getLiteral();
+        }
+                else if(auto * _=dynamic_cast<Float32Literal*>(expr)){
+           return "#"+expr->getLiteral();
+        }
+                else if(auto * _=dynamic_cast<Float64Literal*>(expr)){
+           return "#"+expr->getLiteral();
+        }        else if(auto * _=dynamic_cast<BoolLiteral*>(expr)){
+           return "#"+expr->getLiteral();
+        }     
+        if (auto* infix = dynamic_cast<InfixExpression*>(expr)) {
+            std::string left = genExpr(infix->getLeft());
+            std::string right = genExpr(infix->getRight());
+            std::string result = ctx.temps.newTemp();
+            TACOp op = convertOp(infix->getOperator());
+            ctx.emit(op, result, left, right);
+            return result;
+        }
+    }
+    
+    // 翻译语句
+    void genStmt(Statement* stmt) {
+        if (auto* _ = dynamic_cast<DeclareStatement*>(stmt)) {
+            auto symbols=_->getVars();
+            for(auto & symbol : symbols){
+                ctx.emit(TACOp::ALLOCA,symbol.first->getLiteral());
+                auto value=symbol.second;
+                if(value){
+                    auto val=genExpr(value);
+                    ctx.emit(TACOp::MOVE,symbol.first->getLiteral(),val);
+                }
+            }
+        }
+    }
+    void gen(Program *program){
+        auto stmts=program->stmts;
+        for(auto & stmt : stmts){
+            genStmt(stmt);
+        }
+    }
+};
 }
