@@ -70,6 +70,9 @@ namespace ns
       else if(op == "%"){
          return TACOp::MOD;
       }
+      else if(op == "="){
+         return TACOp::MOVE;
+      }
       else{
          return TACOp::NOP;
       }
@@ -193,9 +196,9 @@ namespace ns
 
          case TACOp::RET:
             // RET:    RET
-            if (!result.empty())
+            if (!arg1.empty())
             {
-               ss << result;
+               ss <<"RET "<< arg1;
             }
             break;
 
@@ -210,7 +213,7 @@ namespace ns
 
          case TACOp::PARAM:
             // PARAM:  PARAM #0, x
-            ss << arg1 << ", " << arg2;
+            ss <<"PARAM "<< arg1 << ", " << arg2;
             break;
 
          case TACOp::MOVE:
@@ -233,7 +236,7 @@ namespace ns
             // NOP:    NOP
             break;
          case TACOp::ALLOCA:
-            ss << tacOpToString(op) << " "<<result;
+            ss << tacOpToString(op) << " "<<arg1<<", "<<arg2;
             break;
          default:
             // 二元操作: t1 = t2 + t3

@@ -35,9 +35,12 @@ namespace ns
         int scope_level;
         std::string name;
     } Symbol;
-
+    class GimpleCodeGen;
+    std::string type_to_string(DataType type);
+    DataType string_to_type(std::string type);
     class SemanticAnalyzer
     {
+    friend GimpleCodeGen;
     public:
         int check(Program * program);
         ErrorManager *what();
@@ -65,8 +68,6 @@ namespace ns
     private:
         bool exit_scope();
         Symbol *find_symbol(const std::string &name);
-        std::string type_to_string(DataType type);
-        DataType string_to_type(std::string type);
         bool is_arithmetic_op(std::string op);
         bool is_logic_op(std::string op);
         bool is_int(DataType type);

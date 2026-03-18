@@ -97,7 +97,7 @@ namespace ns
         {
             arr->append(std::make_shared<Int32>(*((Int32 *)(args[1].get()))));
         }
-        else if (typeid(*(args[1].get())) == typeid(Number))
+        else if (typeid(*(args[1].get())) == typeid(Int64))
         {
             arr->append(std::make_shared<Int64>(*((Int64 *)(args[1].get()))));
         }

@@ -462,6 +462,7 @@ namespace ns
         else if (typeid(*node) == typeid(ClassLiteral))
         {
             ClassLiteral *cl = (ClassLiteral *)node;
+            // std::cout<<cl->toString()<<std::endl;
             std::shared_ptr<Enviroment> class_env = std::make_shared<Enviroment>(env_);
             std::shared_ptr<Class> r = std::make_shared<Class>(cl, class_env);
             r->getEnv()->setOuter(cl->getLiteral(), r);
@@ -772,6 +773,17 @@ namespace ns
             ClassLiteral *cl_lit = cls->classLiteral;
 
             std::shared_ptr<Enviroment> env = std::make_shared<Enviroment>(env_);
+            //把父类的公有/保护成员加入环境
+            // auto &parents=cl_lit->getBaseClasses();
+            // for(const auto & parent : parents){
+            //     auto _=parent->getLiteral();
+            //     auto r=env_->get(_);
+            //     if(!r || typeid(r) != typeid(Class*)){
+            //         return std::make_shared<Error>("父类有错");
+            //     }
+            //     Class * p=(Class*)(r.get());
+            //     env->merge(p->classLiteral->)
+            // }
             std::shared_ptr<ClassInstance> r = std::make_shared<ClassInstance>(env);
             for (auto &mem : cl_lit->getMembers())
             {

@@ -222,7 +222,8 @@ namespace ns
         std::vector<std::unique_ptr<Expression>> args;
         if (peek().getType() == end)
         {
-            advance();
+            advance();//跳至右中括号
+            advance();//跳至下一Token
             return {};
         }
         advance();

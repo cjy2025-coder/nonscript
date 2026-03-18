@@ -1,0 +1,1 @@
+g++ -fdump-tree-gimple temp.cpp -o temp

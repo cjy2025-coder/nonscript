@@ -80,7 +80,7 @@ namespace ns
         }
         return it->second;
     }
-    std::string SemanticAnalyzer::type_to_string(DataType type)
+    std::string type_to_string(DataType type)
     {
         switch (type)
         {
@@ -116,7 +116,7 @@ namespace ns
             return "unknown";
         }
     }
-    DataType SemanticAnalyzer::string_to_type(std::string type)
+    DataType string_to_type(std::string type)
     {
         if (type == "int8")
             return DataType::INT8;
@@ -147,7 +147,7 @@ namespace ns
     TypeInfo *SemanticAnalyzer::check_ident(Ident *ident)
     {
         auto symbol = find_symbol(ident->getLiteral());
-        if (!symbol) // 没有找到这个标识符
+        if (!symbol || symbol->scope_level > current_scope) // 没有找到这个标识符
         {
             raiseError(ErrorType::SEMANTIC_ERROR, "undefined symbol: " + ident->getLiteral(), ident->getToken().getLocation());
             return createTypeInfo(DataType::ERROR);
@@ -209,7 +209,19 @@ namespace ns
             _MARK_ERROR
         }
         auto op = expr->getOperator();
-        if (is_arithmetic_op(op))
+        if (op == "=")
+        { // 是赋值语句
+            if (left_type->baseType != right_type->baseType && 
+                !(is_number(left_type->baseType) && is_number(right_type->baseType)))
+            {
+                hasError = true;
+                raiseError(ErrorType::SEMANTIC_ERROR, "unmatch type for assignment statements: " + expr->toString(), expr->getToken().getLocation());
+            }
+            else{
+                return createTypeInfo(left_type->baseType);
+            }
+        }
+        else if (is_arithmetic_op(op))
         {
             if (is_number(left_type->baseType) && is_number(right_type->baseType))
             {
@@ -352,18 +364,20 @@ namespace ns
     {
         auto stmts = stmt->value();
         TypeInfo *typeInfo = nullptr;
-        bool hasError=false;
+        bool hasError = false;
         for (auto &stmt : stmts)
         {
             typeInfo = check_statement(stmt);
-            if (_SEMANTIC_ERROR(typeInfo)){
-                hasError=true;
+            if (_SEMANTIC_ERROR(typeInfo))
+            {
+                hasError = true;
                 continue;
             }
             if (typeid(*stmt) == typeid(ReturnStatement))
                 return typeInfo;
         }
-        if(hasError){
+        if (hasError)
+        {
             _MARK_ERROR
         }
         return createTypeInfo(DataType::NONE);
@@ -447,6 +461,13 @@ namespace ns
     TypeInfo *SemanticAnalyzer::check_func_statement(FuncDecl *stmt)
     {
         TypeInfo *typeInfo = createTypeInfo(DataType::FUNCTION);
+        std::string name = stmt->getLiteral();
+        if(find_symbol(name)){
+            raiseError(ErrorType::SEMANTIC_ERROR, 
+                "redefine function: " + name, 
+                stmt->getToken().getLocation());
+            _MARK_ERROR
+        }
         auto params = stmt->getParams();
         bool hasError = false;
         enter_scope(); // 进入函数的局部变量作用域
@@ -475,7 +496,6 @@ namespace ns
         typeInfo->detail = funcDetail;
         exit_scope(); // 离开局部变量作用域
         // 将函数名写入符号表
-        std::string name = stmt->getLiteral();
         Symbol *new_symbol = new Symbol();
         new_symbol->name = name;
         new_symbol->scope_level = current_scope;
@@ -518,25 +538,26 @@ namespace ns
     TypeInfo *SemanticAnalyzer::check_if_expression(IfExpression *expr)
     {
         auto condition = expr->getCondition();
-        bool hasError=false;
+        bool hasError = false;
         if (_SEMANTIC_ERROR(check_expression(condition)))
         {
-           hasError=true;
+            hasError = true;
         }
         auto consequence = expr->getConsequence();
         if (_SEMANTIC_ERROR(check_statement(consequence)))
         {
-            hasError=true;
+            hasError = true;
         }
         auto alternative = expr->getAlternative();
         if (alternative != NULL)
         {
             if (_SEMANTIC_ERROR(check_statement(alternative)))
             {
-               hasError=true;
+                hasError = true;
             }
         }
-        if(hasError){
+        if (hasError)
+        {
             _MARK_ERROR
         }
         return createTypeInfo(DataType::NONE);
@@ -544,17 +565,18 @@ namespace ns
     TypeInfo *SemanticAnalyzer::check_while_expression(WhileExpression *expr)
     {
         auto condition = expr->getCondition();
-        bool hasError=false;
+        bool hasError = false;
         if (_SEMANTIC_ERROR(check_expression(condition)))
         {
-            hasError=true;
+            hasError = true;
         }
         auto body = expr->getBody();
         if (_SEMANTIC_ERROR(check_statement(body)))
         {
-            hasError=true;
+            hasError = true;
         }
-        if(hasError){
+        if (hasError)
+        {
             _MARK_ERROR
         }
         return createTypeInfo(DataType::NONE);
@@ -610,27 +632,45 @@ namespace ns
     }
     TypeInfo *SemanticAnalyzer::check_class_statement(ClassLiteral *stmt)
     {
-        std::vector<std::unique_ptr<Ident>> &parents = stmt->getBaseClasses();
-        bool hasError=true;
-        for (auto &parent : parents)
-        {
-            if (_SEMANTIC_ERROR(check_expression(parent.get())))
-            {
-                hasError=true;
-            }
-        }
-        auto &members = stmt->getMembers();
-        for (auto &member : members)
-        {
-            if (_SEMANTIC_ERROR(check_statement(member.declaration.get())))
-            {
-                hasError=true;
-            }
-        }
-        if(hasError){
+        auto name=stmt->getLiteral();
+        if(find_symbol(name)){
+            raiseError(ErrorType::SEMANTIC_ERROR, 
+                "redefine class: " + name, 
+                stmt->getToken().getLocation());
             _MARK_ERROR
         }
-        return createTypeInfo(DataType::NONE);
+        std::vector<std::unique_ptr<Ident>> &parents = stmt->getBaseClasses();
+        bool hasError = false;
+        // for (auto &parent : parents)
+        // {
+        //     if (_SEMANTIC_ERROR(check_expression(parent.get())))
+        //     {
+        //         hasError = true;
+        //     }
+        // }
+        auto &members = stmt->getMembers();
+        enter_scope();
+        for (auto &member : members)
+        {
+            auto _=check_statement(member.declaration.get());
+            if (_SEMANTIC_ERROR(_))
+            {
+                hasError = true;
+            }
+        }
+        exit_scope();
+        if (hasError)
+        {
+            _MARK_ERROR
+        }
+        auto ret=createTypeInfo(DataType::NONE);
+        // 将类名写入符号表
+        Symbol *new_symbol = new Symbol();
+        new_symbol->name = name;
+        new_symbol->scope_level = current_scope;
+        new_symbol->type_info = ret;
+        push_symbol(name, new_symbol);
+        return ret;
     }
     TypeInfo *SemanticAnalyzer::check_return_statement(ReturnStatement *stmt)
     {
@@ -715,6 +755,9 @@ namespace ns
                         hasError = true;
                     }
                 }
+            }
+            else{
+                right_type=createTypeInfo(DataType::ANY);
             }
             Symbol *new_symbol = new Symbol();
             new_symbol->name = name;

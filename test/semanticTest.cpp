@@ -74,7 +74,7 @@ int main()
         resetConsoleColor();
         return -1;
     }
-    ns::SemanticAnalyzer * sa=new SemanticAnalyzer(&lexer);
+    ns::SemanticAnalyzer * sa=new ns::SemanticAnalyzer(&lexer);
     auto status=sa->check(program.get());
     if(!status){
         auto e = sa->what();

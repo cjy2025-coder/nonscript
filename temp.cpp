@@ -1,11 +1,8 @@
 #include<iostream>
+int f(int a){
+    return a;
+}
 int main(){
-for(int a=0,b=1;a>=1 && b<1;a++){
-
-}
-
-for(int a=0,b=1;a>=1,b<1;a++,std::cout<<a){
-
-}
+   int a=1,b=a+2;
 
 }

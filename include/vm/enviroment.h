@@ -42,6 +42,9 @@ namespace ns
             type = ENV_OUTER;
             return NULL;
         }
+        std::map<std::string, std::shared_ptr<Object>> getStores() const{
+            return stores;
+        }
         void set(std::string name, std::shared_ptr<Object> item)
         {
             stores[name] = item;
@@ -57,6 +60,12 @@ namespace ns
         void setOuter(std::shared_ptr<Enviroment> outer_)
         {
             outer = outer_;
+        }
+        void merge(std::shared_ptr<Enviroment> env){
+            auto  stores_=env->getStores();
+            for(auto it=stores_.begin();it!=stores_.end();it++){
+                stores[it->first]=it->second;
+            }
         }
     };
 }
