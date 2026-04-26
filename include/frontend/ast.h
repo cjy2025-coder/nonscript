@@ -8,6 +8,7 @@
 #include <optional>
 #include <iostream>
 #include <map>
+#include "type.h"
 namespace ns
 {
     /*抽象语法树基础结点*/
@@ -23,7 +24,9 @@ namespace ns
     {
     protected:
         Token token;
-        DataType type; // 表达式的最终类型
+        // 表达式的类型
+        _type *type;
+
     public:
         Expression(const Token &t) : token(t) {}
         Expression() {}
@@ -43,11 +46,11 @@ namespace ns
         {
             return token;
         }
-        DataType getType() const
+        std::string getType() const
         {
-            return type;
+            return type ? type->alias : "";
         }
-        void setType(DataType type_)
+        void setType(_type *type_)
         {
             type = type_;
         }
@@ -81,21 +84,17 @@ namespace ns
 
     class Ident : public Expression
     {
-        std::string type = "any";
+        // _type *type;
 
     public:
-        Ident(const Token &t) : Expression(t) {}
-        void setType(const std::string &type_)
+        Ident(const Token &t) : Expression(t)
         {
-            type = type_;
+            type = nullptr;
         }
+
         std::string toString() const override
         {
-            return getLiteral() + ": " + type;
-        }
-        std::string getType() const
-        {
-            return type;
+            return type ? (getLiteral() + ": " + type->alias) : getLiteral();
         }
     };
 
@@ -472,6 +471,7 @@ namespace ns
 
     class NullLiteral : public Expression
     {
+
     public:
         NullLiteral(const Token &t) : Expression(t) {}
         NullLiteral() {}
@@ -482,7 +482,15 @@ namespace ns
     };
 
     // std::unique_ptr<NullLiteral>  AstNull;
-
+    class ThisExpr : public Expression
+    {
+    public:
+        ThisExpr(const Token &t) : Expression(t) {}
+        std::string toString() const override
+        {
+            return "this";
+        }
+    };
     class PrefixExpression : public Expression
     {
     private:
@@ -632,14 +640,14 @@ namespace ns
         }
     };
     // 访问级别定义
-    enum AccessLevel
+    enum class AccessLevel
     {
         Public,
         Private,
         Protected
     };
     // 成员类型分类
-    enum MemberType
+    enum class MemberType
     {
         Field,
         Method,
@@ -807,12 +815,30 @@ namespace ns
             return ret;
         }
     };
+    // 函数形参
+    typedef struct _FuncParam
+    {
+        std::unique_ptr<Ident> name;
+        std::unique_ptr<Expression> init;
+        std::string toString() const
+        {
+            std::string ret = name->getType() + " ";
+            ret += name->getLiteral();
+            if (init)
+            {
+                ret += "= ";
+                ret += init->toString();
+            }
+            return ret;
+        }
+    } FuncParam;
     // 具名函数和匿名函数都具有的内容
     struct FuncBase
     {
-        std::vector<std::shared_ptr<Expression>> params;
+        std::vector<std::shared_ptr<FuncParam>> params;
         std::shared_ptr<BlockStatement> body;
-        void setParams(std::vector<std::shared_ptr<Expression>> &params_)
+        _type *ret_type;
+        void setParams(std::vector<std::shared_ptr<FuncParam>> &params_)
         {
             params = params_;
         }
@@ -824,7 +850,11 @@ namespace ns
         {
             body.reset(body_);
         }
-        std::vector<std::shared_ptr<Expression>> getParams()
+        void setRetType(_type *ret)
+        {
+            ret_type = ret;
+        }
+        std::vector<std::shared_ptr<FuncParam>> getParams()
         {
             return params;
         }
@@ -832,20 +862,34 @@ namespace ns
         {
             return body.get();
         }
-        void appendParams(Expression *id)
+        // void appendParams(Expression *id)
+        // {
+        //     params.emplace_back(id);
+        // }
+        _type *getRetType() const
         {
-            params.emplace_back(id);
+            return ret_type;
         }
     };
     // 具名函数的申明
     class FuncDecl : public Statement, public FuncBase
     {
-    public:
-        FuncDecl(const Token &t) : Statement(t) {} // 将函数名通过token传入
+        bool is_extern_func = false;
 
+    public:
+        FuncDecl(const Token &t) : Statement(t)
+        {
+            setRetType(nullptr);
+        } // 将函数名通过token传入
+        void mark_external() { is_extern_func = true; }
+        bool check_if_extern_func() const { return is_extern_func; }
         std::string toString() const override
         {
             std::string ret = "func ";
+            if (is_extern_func)
+            {
+                ret = "extern " + ret;
+            }
             ret += getLiteral() + "(";
             for (size_t i = 0; i < params.size(); i++)
             {
@@ -853,7 +897,16 @@ namespace ns
                     ret.append(", ");
                 ret.append(params[i]->toString());
             }
-            ret += "){\n";
+            ret += ")";
+            if (ret_type)
+            {
+                ret += " -> " + ret_type->alias;
+            }
+            if (is_extern_func)
+            {
+                return ret;
+            }
+            ret += "{\n";
             ret += body->toString();
             ret += "}\n";
             return ret;
@@ -897,6 +950,10 @@ namespace ns
                 for (auto &cap : captures)
                     ret += cap->toString() + ",";
                 ret.back() = ']';
+            }
+            if (ret_type)
+            {
+                ret += " -> " + ret_type->alias;
             }
             ret += "{\n" + body->toString() + "}";
             return ret;
@@ -1003,17 +1060,18 @@ namespace ns
     class DeclareStatement : public Statement
     {
     public:
-        std::vector<std::pair<Ident*,Expression*>> vars;
+        std::vector<std::pair<Ident *, Expression *>> vars;
         bool isVariable;
+
     public:
         DeclareStatement(const Token &t, bool isVariable_) : Statement(t), isVariable(isVariable_) {}
-        std::vector<std::pair<Ident*,Expression*>> getVars() const
+        std::vector<std::pair<Ident *, Expression *>> getVars() const
         {
             return vars;
         }
         void add(Ident *id, Expression *e)
         {
-            vars.push_back({id,e});
+            vars.push_back({id, e});
         }
         std::string toString() const override
         {
@@ -1132,12 +1190,14 @@ namespace ns
             return ret;
         }
     };
-    struct SwitchCase{
-       std::unique_ptr<Expression> mcase;
-       std::unique_ptr<BlockStatement> mbody;
+    struct SwitchCase
+    {
+        std::unique_ptr<Expression> mcase;
+        std::unique_ptr<BlockStatement> mbody;
     };
-    struct DefaultSwitchCase{
-       std::unique_ptr<BlockStatement> mbody;
+    struct DefaultSwitchCase
+    {
+        std::unique_ptr<BlockStatement> mbody;
     };
     class SwitchExpression : public Expression
     {
@@ -1145,113 +1205,141 @@ namespace ns
         std::unique_ptr<Expression> expr;
         std::vector<std::unique_ptr<SwitchCase>> cases;
         std::unique_ptr<DefaultSwitchCase> defaultCase;
+
     public:
         SwitchExpression() {}
         SwitchExpression(const Token &t) : Expression(t) {}
+
     public:
-        void setExpr(std::unique_ptr<Expression> expr_){
-            expr=std::move(expr_);
+        void setExpr(std::unique_ptr<Expression> expr_)
+        {
+            expr = std::move(expr_);
         }
-        void setDefaultCase(std::unique_ptr<DefaultSwitchCase> defaultCase_){
-            defaultCase=std::move(defaultCase_);
+        void setDefaultCase(std::unique_ptr<DefaultSwitchCase> defaultCase_)
+        {
+            defaultCase = std::move(defaultCase_);
         }
-        DefaultSwitchCase * getDefaultCase() const{
+        DefaultSwitchCase *getDefaultCase() const
+        {
             return defaultCase.get();
         }
-        void addCase(std::unique_ptr<SwitchCase> case_){
+        void addCase(std::unique_ptr<SwitchCase> case_)
+        {
             cases.push_back(std::move(case_));
         }
-        const std::vector<std::unique_ptr<SwitchCase>> & getCases() const{
+        const std::vector<std::unique_ptr<SwitchCase>> &getCases() const
+        {
             return cases;
         }
-        Expression * getExpr() const{
+        Expression *getExpr() const
+        {
             return expr.get();
         }
+
     public:
         std::string toString() const override
         {
             std::string ret = "";
             ret += "switch (" + expr->toString() + ") {\n";
-            for(const auto & _case : cases){
-                ret+=" case ";
-                ret+=_case->mcase->toString();
-                ret+=" : {\n";
-                ret+=_case->mbody->toString();
-                ret+=" }\n";
+            for (const auto &_case : cases)
+            {
+                ret += " case ";
+                ret += _case->mcase->toString();
+                ret += " : {\n";
+                ret += _case->mbody->toString();
+                ret += " }\n";
             }
-            if(defaultCase){
-               ret+=" default:";
-               ret+=" {\n";
-               ret+=defaultCase->mbody->toString();
-               ret+=" }\n";
+            if (defaultCase)
+            {
+                ret += " default:";
+                ret += " {\n";
+                ret += defaultCase->mbody->toString();
+                ret += " }\n";
             }
             ret += "}\n";
             return ret;
         }
     };
-    typedef struct LoopVariable{
-       std::unique_ptr<Ident> var;
-       std::unique_ptr<Expression> value;
-    }*PLoopVariable;
+    typedef struct LoopVariable
+    {
+        std::unique_ptr<Ident> var;
+        std::unique_ptr<Expression> value;
+    } *PLoopVariable;
     // typedef struct LoopAction{
     //    std::unique_ptr<ExpressionStatement> action;
     // }*LoopAction;
-    
-    class ForLoop: public Statement{
+
+    class ForLoop : public Statement
+    {
     private:
         std::unique_ptr<Expression> condtion;
         std::vector<std::unique_ptr<LoopVariable>> vars;
         std::vector<std::unique_ptr<Expression>> actions;
         std::unique_ptr<BlockStatement> body;
+
     public:
-        void setConditon(std::unique_ptr<Expression> condtion_){
-            condtion=std::move(condtion_);
+        void setConditon(std::unique_ptr<Expression> condtion_)
+        {
+            condtion = std::move(condtion_);
         }
-        void setBody(std::unique_ptr<BlockStatement> body_){
-            body=std::move(body_);
+        void setBody(std::unique_ptr<BlockStatement> body_)
+        {
+            body = std::move(body_);
         }
-        void addVariable(std::unique_ptr<LoopVariable> var){
+        void addVariable(std::unique_ptr<LoopVariable> var)
+        {
             vars.push_back(std::move(var));
         }
-        void addAction(std::unique_ptr<Expression> action){
+        void addAction(std::unique_ptr<Expression> action)
+        {
             actions.push_back(std::move(action));
         }
-        Expression * getCondtion()const{
+        Expression *getCondtion() const
+        {
             return condtion.get();
         }
-        BlockStatement * getBody()const{
+        BlockStatement *getBody() const
+        {
             return body.get();
         }
-        const std::vector<std::unique_ptr<LoopVariable>> & getVariables()const{
+        const std::vector<std::unique_ptr<LoopVariable>> &getVariables() const
+        {
             return vars;
         }
-        const std::vector<std::unique_ptr<Expression>> & getActions()const{
+        const std::vector<std::unique_ptr<Expression>> &getActions() const
+        {
             return actions;
         }
+
     public:
-        std::string toString() const override{
-            std::string ret="";
-            ret+="for(";
-            for(size_t i=0;i < vars.size() ; i++){
-                if(i){
-                    ret+=", ";
+        std::string toString() const override
+        {
+            std::string ret = "";
+            ret += "for(";
+            for (size_t i = 0; i < vars.size(); i++)
+            {
+                if (i)
+                {
+                    ret += ", ";
                 }
-                ret+=vars[i]->var->toString();
-                ret+="= ";
-                ret+=vars[i]->value->toString();
+                ret += vars[i]->var->toString();
+                ret += "= ";
+                ret += vars[i]->value->toString();
             }
-            ret+="; ";
-            ret+=condtion->toString();
-            ret+="; ";
-            for(size_t i=0;i < actions.size() ; i++){
-                if(i){
-                    ret+=", ";
+            ret += "; ";
+            ret += condtion->toString();
+            ret += "; ";
+            for (size_t i = 0; i < actions.size(); i++)
+            {
+                if (i)
+                {
+                    ret += ", ";
                 }
-                ret+=actions[i]->toString();
+                ret += actions[i]->toString();
             }
-            ret+="){\n";
-            ret+=body->toString();
-            ret+="}\n";
+            ret += "){\n";
+            ret += body->toString();
+            ret += "}\n";
             return ret;
         }
     };
@@ -1261,6 +1349,7 @@ namespace ns
         std::unique_ptr<BlockStatement> try_body;
         std::unique_ptr<BlockStatement> exception_body;
         std::unique_ptr<Ident> exception;
+
     public:
         TryCatchStatement() {}
         TryCatchStatement(const Token &token) : Statement(token) {}
@@ -1274,53 +1363,64 @@ namespace ns
         {
             exception_body = std::move(body_);
         }
-        void setException(std::unique_ptr<Ident> exception_){
-            exception=std::move(exception_);
+        void setException(std::unique_ptr<Ident> exception_)
+        {
+            exception = std::move(exception_);
         }
-        BlockStatement * getTryBody() const
+        BlockStatement *getTryBody() const
         {
             return try_body.get();
         }
-        BlockStatement * getExceptionBody() const
+        BlockStatement *getExceptionBody() const
         {
             return exception_body.get();
         }
-        Ident * getException() const{
+        Ident *getException() const
+        {
             return exception.get();
         }
+
     public:
-       std::string toString() const override{
-            std::string ret="";
-            ret+="try{\n";
-            ret+=try_body->toString();
-            ret+="}\n";
-            ret+="catch(";
-            ret+=exception->toString();
-            ret+="){\n";
-            ret+=exception_body->toString();
-            ret+="}";
+        std::string toString() const override
+        {
+            std::string ret = "";
+            ret += "try{\n";
+            ret += try_body->toString();
+            ret += "}\n";
+            ret += "catch(";
+            ret += exception->toString();
+            ret += "){\n";
+            ret += exception_body->toString();
+            ret += "}";
             return ret;
-       }
+        }
     };
-    class ThrowStatement:public Statement{
+    class ThrowStatement : public Statement
+    {
     private:
         std::unique_ptr<Expression> exception;
+
     public:
-        ThrowStatement(const Token & t):Statement(t){}
-        ThrowStatement(){}
+        ThrowStatement(const Token &t) : Statement(t) {}
+        ThrowStatement() {}
+
     public:
-        Expression * getException() const{
+        Expression *getException() const
+        {
             return exception.get();
         }
-        void setException(std::unique_ptr<Expression> _exception){
-            exception=std::move(exception);
+        void setException(std::unique_ptr<Expression> _exception)
+        {
+            exception = std::move(exception);
         }
+
     public:
-        std::string toString() const override{
-            std::string ret="";
-            ret+="throw ";
-            ret+=exception->toString();
-            ret+="\n";
+        std::string toString() const override
+        {
+            std::string ret = "";
+            ret += "throw ";
+            ret += exception->toString();
+            ret += "\n";
             return ret;
         }
     };

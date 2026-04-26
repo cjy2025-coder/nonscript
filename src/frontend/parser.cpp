@@ -222,8 +222,8 @@ namespace ns
         std::vector<std::unique_ptr<Expression>> args;
         if (peek().getType() == end)
         {
-            advance();//跳至右中括号
-            advance();//跳至下一Token
+            advance(); // 跳至右中括号
+            advance(); // 跳至下一Token
             return {};
         }
         advance();
@@ -256,15 +256,16 @@ namespace ns
         return arr;
     }
 
-    std::vector<std::shared_ptr<Expression>> Parser::parse_func_params(int &error)
+    std::vector<std::shared_ptr<FuncParam>> Parser::parse_func_params(int &error)
     { // 进来时token为左括号
-        std::vector<std::shared_ptr<Expression>> params;
-        advance(); // 跳过左括号
-        if (current().getType() == TokenType::RPAREN)
+        std::vector<std::shared_ptr<FuncParam>> params;
+        advance();                                    // 跳过左括号
+        if (current().getType() == TokenType::RPAREN) // 函数参数为空
         {
             advance();
             return {};
         }
+
         do
         {
             if (!match(TokenType::IDENT))
@@ -272,36 +273,44 @@ namespace ns
                 error = 1;
                 return {};
             }
-            auto ident = parse_ident_expression();
-            if (current().getType() == TokenType::COLON)
-            { // 参数被声明了类型
-                advance();
-                if (!match(TokenType::IDENT))
-                { // 希望冒号后面为参数类型
-                    error = 1;
-                    return {};
-                }
-                auto type = parse_ident_expression()->getLiteral();
-                ident->setType(type);
+            auto &&token=current();
+            auto type = parse_ident_expression();
+            auto _ = types->find(type->getLiteral());
+            if (!_)
+            { // 类型不存在
+                error = 1;
+                raiseError(ErrorType::SYNTAX_ERROR, 
+                    "invalid type :"+token.getLiteral(),
+                     token.getLocation());
+                return {};
             }
+            if (current().getType() != TokenType::IDENT)
+            { // 类型后没有形参名
+                error = 1;
+                raiseError(ErrorType::SYNTAX_ERROR, 
+                    "expect param name after type instead of got :"+token.getLiteral(), 
+                    token.getLocation());
+                return {};
+            }
+            auto ident = parse_ident_expression();
+            ident->setType(_);
+            auto param=std::make_shared<FuncParam>();
+            param->name=std::move(ident);
             if (current().getType() == TokenType::ASSIGN)
             { // 函数参数有初始值
-                auto param = std::make_unique<InfixExpression>(current());
                 advance(); // 跳过等号
                 auto val = parse_expression(Priority::LOWEST);
                 if (!val)
                 {
-                    raiseError(ErrorType::SYNTAX_ERROR, "expect expression after =", current().getLocation());
+                    raiseError(ErrorType::SYNTAX_ERROR,
+                         "expect expression after =", 
+                         current().getLocation());
                     error = 1;
                     return {};
-                }
-                param->setLeft(ident.release());
-                param->setRight(val.release());
-                params.emplace_back(param.release());
-                auto it = current();
+                }              
+                param->init=std::move(val);
             }
-            else
-                params.emplace_back(ident.release());
+            params.emplace_back(param);
         } while (current().getType() == TokenType::COMMA && (advance(), true));
         if (!match(TokenType::RPAREN))
         { // 希望遇到右括号以结束参数申明
@@ -312,7 +321,7 @@ namespace ns
         return params;
     }
 
-    std::unique_ptr<FuncDecl> Parser::parse_func_statement()
+    std::unique_ptr<FuncDecl> Parser::parse_func_statement(bool is_extern_func)
     {
         advance(); // 跳过func关键字
         if (!match(TokenType::IDENT))
@@ -332,6 +341,47 @@ namespace ns
             return NULL;
         }
         func->setParams(params);
+        if (current_token_type() == TokenType::MINUS)
+        {
+            advance();
+            if (!match(TokenType::GT))
+            {
+                return NULL;
+            }
+            advance();
+            if (!match(TokenType::IDENT))
+            {
+                return NULL;
+            }
+            auto token=current();
+            auto _ = parse_ident_expression();
+            if (!_)
+            {
+                return NULL;
+            }
+            auto type = types->find(_->getLiteral());
+            if (!type)
+            {
+                raiseError(ErrorType::SYNTAX_ERROR, 
+                    "invalid type :"+token.getLiteral(), 
+                     token.getLocation());
+                return NULL;
+            }
+            func->setRetType(type);
+        }
+        else if(is_extern_func){ // 是 extern 函数必须声明返回值类型
+            raiseError(ErrorType::SYNTAX_ERROR, 
+                    "expect a return type declaration for external function.", 
+                     current().getLocation());
+            return nullptr;
+        }
+        if(is_extern_func){
+            func->mark_external();
+            if(current_token_type() == TokenType::SEMICOLON){ //跳过可能的尾随分号
+                advance();
+            }
+            return func;
+        }
         if (!match(TokenType::LBPAREN))
         { // 希望遇到左大括号
             return NULL;
@@ -349,7 +399,8 @@ namespace ns
 
     std::unique_ptr<BlockStatement> Parser::parse_blockstatement(int loop)
     {
-        if(!match(TokenType::LBPAREN)){
+        if (!match(TokenType::LBPAREN))
+        {
             return nullptr;
         }
         std::unique_ptr<BlockStatement> bstmt(new BlockStatement(current()));
@@ -395,35 +446,41 @@ namespace ns
     std::unique_ptr<ClassLiteral> Parser::parse_class_statement()
     {
         advance();                                                    // 跳过class关键字
+        if(current_token_type() != TokenType::IDENT){
+            raiseError(ErrorType::SYNTAX_ERROR, 
+                "expect a class name. ", 
+                current().getLocation());
+            return nullptr;
+        }
         std::unique_ptr<ClassLiteral> c(new ClassLiteral(current())); // 将类名传入
+        types->emit(current().getLiteral());//注册类到类型系统
         advance();
         if (current().getType() == TokenType::EXTENDS)
         {                                       // 如果有父类
             advance();                          // 跳过extends关键字
-            auto id = parse_ident_expression(); // 解析父类名
-            if (id == NULL)
-            {
-                raiseError(ErrorType::SYNTAX_ERROR, "expect a class name after :extends", current().getLocation());
-                return NULL;
+            if(current_token_type() != TokenType::IDENT){
+                raiseError(ErrorType::SYNTAX_ERROR, "expect a class name.", current().getLocation());
+                return nullptr;
             }
+            auto id = parse_ident_expression(); // 解析父类名
+            if(!id){ return nullptr; }
             c->addBaseClass(std::move(id)); // 设置父类
-            while (peek().getType() == TokenType::COMMA)
+            while (current_token_type() == TokenType::COMMA)
             { // 如果有多个父类
-                advance();
                 advance(); // 跳过逗号
-                auto id = parse_ident_expression();
-                if (id == NULL)
-                {
-                    raiseError(ErrorType::SYNTAX_ERROR, "expect a class name after `,`", current().getLocation());
-                    return NULL;
+                if(current_token_type() != TokenType::IDENT){
+                    raiseError(ErrorType::SYNTAX_ERROR, "expect a class name.", current().getLocation());
+                    return nullptr;
                 }
+                auto id = parse_ident_expression();
+                if(!id){ return nullptr; }
                 c->addBaseClass(std::move(id));
                 // advance();//跳过父类名
             }
         }
         if (!match(TokenType::LBPAREN)) // 如果不是左大括号，证明申明有误
         {
-            return NULL;
+            return nullptr;
         }
         advance();                                                                                 // 跳过左大括号
         while (current().getType() != TokenType::RBPAREN && current().getType() != TokenType::END) // 解析类成员知道结束或者源文件到头
@@ -431,6 +488,7 @@ namespace ns
             if (current().getType() == TokenType::PRIVATE)
             { // 遇到private关键字
                 // bool isStatic = false;
+                auto old_token = current();
                 advance();
                 /*if (token.getType() == TokenType::STATIC)
                 {
@@ -457,7 +515,7 @@ namespace ns
                 }
                 else
                 {
-                    raiseError(ErrorType::SYNTAX_ERROR, "expect a function or variable after keyword `private`", current().getLocation());
+                    raiseError(ErrorType::SYNTAX_ERROR, "expect a function or variable.", old_token.getLocation());
                     return NULL;
                 }
             }
@@ -569,15 +627,18 @@ namespace ns
             advance();
         return c;
     }
-    std::unique_ptr<ThrowStatement> Parser::parse_throw_statement(){
-        auto stmt=std::make_unique<ThrowStatement>(current());
-        advance();//跳过 throw 关键字
-        auto exception=parse_expression(Priority::LOWEST);
-        if(!exception){
+    std::unique_ptr<ThrowStatement> Parser::parse_throw_statement()
+    {
+        auto stmt = std::make_unique<ThrowStatement>(current());
+        advance(); // 跳过 throw 关键字
+        auto exception = parse_expression(Priority::LOWEST);
+        if (!exception)
+        {
             return nullptr;
         }
         stmt->setException(std::move(exception));
-        if(currentIs(TokenType::SEMICOLON)){
+        if (currentIs(TokenType::SEMICOLON))
+        {
             advance();
         }
         return stmt;
@@ -599,6 +660,8 @@ namespace ns
         case TokenType::VAR: // 解析变量定义
         case TokenType::CONST:
             return parse_declare_statement();
+        case TokenType::EXTERN: //遇到 extern 关键字
+            return parse_extern_prefix();
         case TokenType::FUNC:
             return parse_func_statement();
         case TokenType::RETURN:
@@ -612,6 +675,16 @@ namespace ns
             return parse_expression_statement();
         }
         return NULL;
+    }
+    std::unique_ptr<Statement> Parser::parse_extern_prefix(){
+        advance();//跳过 extern 关键字
+        if(current_token_type() == TokenType::FUNC){ 
+            return  parse_func_statement(true); //返回Statement 子类的std::unique指针
+        }
+        raiseError(ErrorType::SYNTAX_ERROR,
+            "invalid " + current().getLiteral() + " after keyword: extern",
+            current().getLocation());
+
     }
     std::unique_ptr<ShortStatement> Parser::parse_short_statement()
     {
@@ -639,22 +712,28 @@ namespace ns
                 advance();
                 if (!match(TokenType::IDENT))
                     return NULL;
-                ident->setType(current().getLiteral());
+                auto type = types->find(current().getLiteral());
+                if(!type){//不存在的类型
+                   raiseError(ErrorType::SYNTAX_ERROR, "invalid type :"+current().getLiteral(), current().getLocation());
+                   return nullptr;
+                }
+                ident->setType(type);
                 advance(); // 跳过类型
             }
-            else
-            {
-                ident->setType("any");
-            }
+            // else
+            // {
+            //     ident->setType("any");
+            // }
             if (!variable && !match(TokenType::ASSIGN))
                 return NULL; // 常量必须被初始化
             if (current().getType() == TokenType::ASSIGN)
             {              // 遇到有初始化的申明
+                const auto & old_token = current();
                 advance(); // 跳过等号
                 exp = parse_expression(Priority::LOWEST).release();
                 if (!exp)
                 {
-                    raiseError(ErrorType::SYNTAX_ERROR, "expect expression after =", current().getLocation());
+                    raiseError(ErrorType::SYNTAX_ERROR, "expect expression after =", old_token.getLocation());
                     return NULL;
                 }
                 auto type = ident->getType();
@@ -663,13 +742,13 @@ namespace ns
                     // delete exp;
                     try
                     {
-                        if (type == "int8")
+                        if (type == "i8")
                             exp = i64Exp->convertToI8().release();
-                        else if (type == "int16")
+                        else if (type == "i16")
                             exp = i64Exp->convertToI16().release();
-                        else if (type == "int32")
+                        else if (type == "i32")
                             exp = i64Exp->convertToI32().release();
-                        else if (type == "int64")
+                        else if (type == "i64")
                             exp = i64Exp;
                     }
                     catch (const std::overflow_error &e)
@@ -719,6 +798,32 @@ namespace ns
         if (error == 1)
         { // 解析函数参数时出错
             return NULL;
+        }
+        if (match(TokenType::MINUS))
+        {
+            advance();
+            if (!match(TokenType::GT))
+            {
+                return NULL;
+            }
+            advance();
+            if (!match(TokenType::IDENT))
+            {
+                return NULL;
+            }
+            auto token=current();
+            auto _ = parse_ident_expression();
+            if (!_)
+            {
+                return NULL;
+            }
+            auto type = types->find(_->getLiteral());
+            if (!type)
+            {
+                raiseError(ErrorType::SYNTAX_ERROR, "invalid type :"+token.getLiteral(), token.getLocation());
+                return NULL;
+            }
+            exp->setRetType(type);
         }
         exp->setParams(params);
         if (!match(TokenType::LBPAREN))
@@ -885,18 +990,21 @@ namespace ns
             _case->mbody = std::move(body);
             expr->addCase(std::move(_case));
         }
-        if(currentIs(TokenType::DEFAULT)){//遇到default关键字
-            advance();//跳过 default 关键字
-            if(!match(TokenType::COLON)){
+        if (currentIs(TokenType::DEFAULT))
+        {              // 遇到default关键字
+            advance(); // 跳过 default 关键字
+            if (!match(TokenType::COLON))
+            {
                 return nullptr;
             }
-            advance();//跳过冒号
-            auto default_body=parse_blockstatement(0);
-            if(!default_body){
+            advance(); // 跳过冒号
+            auto default_body = parse_blockstatement(0);
+            if (!default_body)
+            {
                 return nullptr;
             }
-            auto default_case=std::make_unique<DefaultSwitchCase>();
-            default_case->mbody=std::move(default_body);
+            auto default_case = std::make_unique<DefaultSwitchCase>();
+            default_case->mbody = std::move(default_body);
             expr->setDefaultCase(std::move(default_case));
         }
         if (!match(TokenType::RBPAREN))
@@ -937,10 +1045,16 @@ namespace ns
             return parse_float_expression();
         case TokenType::LBRACKET:
             return parse_array_expression();
+        case TokenType::THIS:{
+            auto current_token = current();
+            advance();
+            return std::make_unique<ThisExpr>(current_token);
+        }
         case TokenType::NONE:
         {
+            auto current_token = current();
             advance();
-            return std::make_unique<NullLiteral>();
+            return std::make_unique<NullLiteral>(current_token);
         }
         // 一元运算符
         case TokenType::BANG:

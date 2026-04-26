@@ -3,6 +3,7 @@
 #include "./error/error_manager.h"
 #include "./util/util.h"
 #include "lexer.h"
+#include "type.h"
 namespace ns
 {
     enum class Priority
@@ -25,7 +26,8 @@ namespace ns
     private:
         ErrorManager *errorManager;
         Lexer *mLexer;
-
+    private:
+        typeManager * types;
     public:
         ErrorManager *what()
         {
@@ -39,6 +41,8 @@ namespace ns
             msg += SourceUtil::getCaretPointer(location.col);
             errorManager->report(ComilerError(type, e + "\n" + msg, location));
         }
+        // void error()
+        TokenType current_token_type() const { return current().getType(); }
         Token current() const { return tokens[idx]; };
         Token peek(int offset = 1) const { return tokens[idx + offset]; };
         void advance() { idx++; };
@@ -60,8 +64,12 @@ namespace ns
         Parser(std::vector<Token> tokens_) : tokens(tokens_)
         {
             errorManager = new ErrorManager();
+            types=new typeManager();
         }
-
+    public:
+        typeManager * getTypeManager() const{
+            return types;
+        }
     public:
         void setLexer(Lexer *lexer);
     private:
@@ -70,13 +78,14 @@ namespace ns
     private:
 
         //对于语句的解析函数
+        std::unique_ptr<Statement> parse_extern_prefix();
         std::unique_ptr<ThrowStatement> parse_throw_statement();
         std::unique_ptr<TryCatchStatement> parse_try_catch_statement();
         std::unique_ptr<Statement> parse_statement();
         std::unique_ptr<DeclareStatement> parse_declare_statement();
         std::unique_ptr<ExpressionStatement> parse_expression_statement();
-        std::vector<std::shared_ptr<Expression>> parse_func_params(int &error);
-        std::unique_ptr<FuncDecl> parse_func_statement();
+        std::vector<std::shared_ptr<FuncParam>> parse_func_params(int &error);
+        std::unique_ptr<FuncDecl> parse_func_statement(bool is_extern_func = false);
         std::unique_ptr<ClassLiteral> parse_class_statement();
         std::unique_ptr<BlockStatement> parse_blockstatement(int loop);
         std::unique_ptr<ReturnStatement> parse_return_statement();

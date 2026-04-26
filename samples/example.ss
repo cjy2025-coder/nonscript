@@ -1,18 +1,28 @@
-/* class A{
-    private var a=1
-    public func getA(){
-        return a
+/* class Stu{
+    private var name:string = ""
+    public func getName() -> string{
+        return name;
     }
-    public func setA(a_){
-        a=a_
+    public func setName(string name_) -> void{
+        name = name_
+    }
+    public func readName(){
+        var name_:string
+        scan(name_)
     }
 }
-class B extends A{
-    public var b="svxg"
-} */
-/* var b=new B
-print(b.getA()) */
 
+var s:Stu=new Stu() */
+class A{
+ public func f(){
+    var num:i64
+    print("input num !\n")
+    scan(num)
+    print(num)
+ }
+}
 
+var a:A = new A
+a.f()
 
 
