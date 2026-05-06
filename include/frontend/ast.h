@@ -837,7 +837,7 @@ namespace ns
     {
         std::vector<std::shared_ptr<FuncParam>> params;
         std::shared_ptr<BlockStatement> body;
-        _type *ret_type;
+        _type *ret_type = nullptr;
         void setParams(std::vector<std::shared_ptr<FuncParam>> &params_)
         {
             params = params_;

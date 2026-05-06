@@ -1,0 +1,7 @@
+func f1(){
+    var a
+}
+
+func f2(){
+    var a
+}

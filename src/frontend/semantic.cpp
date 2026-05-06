@@ -3,10 +3,10 @@
 namespace ns
 {
     TypeInfo *_errorType = new TypeInfo();
-    void SemanticAnalyzer::push_symbol(std::string name, Symbol *symbol)
-    {
-        symbol_table[name] = symbol; //?
-    }
+    // void SemanticAnalyzer::push_symbol(std::string name, Symbol *symbol)
+    // {
+    //     symbol_table[name] = symbol; //?
+    // }
     bool SemanticAnalyzer::is_arithmetic_op(std::string op)
     {
         return op == "+" || op == "-" || op == "*" || op == "/" || op == "%";
@@ -53,38 +53,38 @@ namespace ns
         ret->baseType = _typeManager->find(alias);
         return ret;
     }
-    bool SemanticAnalyzer::exit_scope()
-    {
-        if (--current_scope <= 0)
-            return false;
-        std::vector<std::string> to_remove;
-        for (const auto &entry : symbol_table)
-        {
-            if (entry.second->scope_level > current_scope)
-            {
-                to_remove.push_back(entry.first);
-            }
-        }
-        for (const auto &name : to_remove)
-        {
-            symbol_table.erase(name);
-        }
-        return true;
-    }
-    Symbol *SemanticAnalyzer::find_symbol(const std::string &name)
-    {
-        auto it = symbol_table.find(name);
-        if (it == symbol_table.end())
-        {
+    // bool SemanticAnalyzer::exit_scope()
+    // {
+    //     if (--current_scope <= 0)
+    //         return false;
+    //     std::vector<std::string> to_remove;
+    //     for (const auto &entry : symbol_table)
+    //     {
+    //         if (entry.second->scope_level > current_scope)
+    //         {
+    //             to_remove.push_back(entry.first);
+    //         }
+    //     }
+    //     for (const auto &name : to_remove)
+    //     {
+    //         symbol_table.erase(name);
+    //     }
+    //     return true;
+    // }
+    // Symbol *SemanticAnalyzer::find_symbol(const std::string &name)
+    // {
+    //     auto it = symbol_table.find(name);
+    //     if (it == symbol_table.end())
+    //     {
 
-            return nullptr;
-        }
-        if (it->second->scope_level > current_scope)
-        {
-            return nullptr;
-        }
-        return it->second;
-    }
+    //         return nullptr;
+    //     }
+    //     if (it->second->scope_level > current_scope)
+    //     {
+    //         return nullptr;
+    //     }
+    //     return it->second;
+    // }
     std::string type_to_string(_type *type)
     {
         return type ? type->alias : "";
@@ -149,8 +149,8 @@ namespace ns
         auto op = expr->getOperator();
         if (op == ".") // 优先判断是否在访问类成员
         {
-            auto t = symbol_table.find(left_type->baseType->alias);
-            auto t_ = std::get<ClassDetail>(t->second->type_info->detail);
+            auto t = st->find(left_type->baseType->alias);
+            auto t_ = std::get<ClassDetail>(t->type_info->detail);
             auto _ = t_.mems.find(right->getLiteral());
             if (_ == t_.mems.end())
             {
@@ -411,31 +411,45 @@ namespace ns
             raiseError(ErrorType::SEMANTIC_ERROR,
                        "expect function " + func->getLiteral(),
                        func->getToken().getLocation());
-            return nullptr;
+            _MARK_ERROR
         }
-        
+
         ns::FuncDetail &func_detail = std::get<ns::FuncDetail>(typeInfo->detail);
-        if(func_detail.is_unlimited_args_func){//不限制形参列表
-           return createTypeInfo(func_detail.return_type->alias, types);
-        }
         std::vector<std::unique_ptr<Expression>> &args = expr->getArgs();
+        if (func_detail.is_unlimited_args_func)
+        { // 不限制形参列表,此时只检查涉及的符号是否定义
+            for (int i = 0; i < args.size(); i++)
+            {
+                auto type = check_expression(args[i].get());
+                if (_SEMANTIC_ERROR(type))
+                {
+                    _MARK_ERROR
+                }
+                return createTypeInfo(func_detail.return_type->alias, types);
+            }
+        }
+
         auto arg_types = func_detail.param_types;
         if (args.size() != arg_types.size())
         {
             raiseError(ErrorType::SEMANTIC_ERROR,
                        "no match arguments for function: " + func->getLiteral(),
                        func->getToken().getLocation());
-            return nullptr;
+            _MARK_ERROR
         }
         for (int i = 0; i < args.size(); i++)
         {
             auto type = check_expression(args[i].get());
-            if (type->baseType != arg_types[i])
+            if (_SEMANTIC_ERROR(type))
+            {
+                _MARK_ERROR
+            }
+            else if (type->baseType != arg_types[i])
             {
                 raiseError(ErrorType::SEMANTIC_ERROR,
                            "unmatch type: " + args[i]->getLiteral(),
                            args[i]->getToken().getLocation());
-                return nullptr;
+                _MARK_ERROR
             }
         }
         return createTypeInfo(func_detail.return_type->alias, types);
@@ -496,7 +510,7 @@ namespace ns
                 stmt->ret_type = t->baseType;
             }
         }
-        
+
         funcDetail.return_type = stmt->ret_type;
         typeInfo->detail = funcDetail;
         exit_scope(); // 离开局部变量作用域
@@ -753,8 +767,9 @@ namespace ns
                             }
                         }
                     }
-                    else if(type != ""){ 
-                         right_type = createTypeInfo(type,types);
+                    else if (type != "")
+                    {
+                        right_type = createTypeInfo(type, types);
                     }
                     else
                     {
@@ -784,7 +799,6 @@ namespace ns
                     _MARK_ERROR
                 }
                 auto params = _stmt->getParams();
-                bool hasError = false;
                 enter_scope(); // 进入函数的局部变量作用域
                 FuncDetail funcDetail = {};
                 for (auto &param : params)
@@ -822,7 +836,7 @@ namespace ns
                 }
                 if (!_stmt->ret_type)
                 {
-                     _stmt->ret_type = t->baseType;
+                    _stmt->ret_type = t->baseType;
                 }
                 funcDetail.return_type = t->baseType;
                 typeInfo->detail = funcDetail;
@@ -909,12 +923,15 @@ namespace ns
     int SemanticAnalyzer::check(Program *program)
     {
         auto stmts = program->stmts;
+        enter_scope();
+        init_builtin_funcs(); // 载入内置函数
         for (auto &stmt : stmts)
         {
             auto _ = check_statement(stmt);
             if (_SEMANTIC_ERROR(_))
                 return 0;
         }
+        exit_scope();
         return 1;
     }
     TypeInfo *SemanticAnalyzer::check_declare_statement(DeclareStatement *stmt)
@@ -955,8 +972,9 @@ namespace ns
                     }
                 }
             }
-            else if(type != ""){ 
-                right_type = createTypeInfo(type,types);
+            else if (type != "")
+            {
+                right_type = createTypeInfo(type, types);
             }
             else
             {

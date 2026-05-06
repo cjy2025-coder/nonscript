@@ -50,5 +50,6 @@
         "typeinfo": "cpp",
         "variant": "cpp"
     },
+    "glassit.alpha": 250,
     // "C_Cpp.errorSquiggles": "disabled"
 }

@@ -1,2 +1,2 @@
-nsc ./samples/example.ss -o temp.exe
-temp
+nsc test.ns -o test.exe -save-temps
+test
