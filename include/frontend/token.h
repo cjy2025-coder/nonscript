@@ -84,6 +84,7 @@ namespace ns{
         BANG,  ///< 逻辑非运算符 !
         LINC,  ///< 左自增运算符 ++
         LDEC,  ///< 左自减运算符 --
+        TYPEID,  ///< 判断类型
         /* 基础符号 */
         LPAREN,     ///< 左括号 (
         RPAREN,     ///< 右括号 )
@@ -95,6 +96,7 @@ namespace ns{
         SEMICOLON,  ///< 分号 ;
         COLON,      ///< 冒号 :
         ANNOTATION, ///< 注解符号 @
+        ARROW,      ///< 箭头符号 ->
         /* 其它 */
         IDENT,      ///< 标识符
         ILLEGAL,    ///< 非法 Token
@@ -113,7 +115,7 @@ namespace ns{
         {"do", TokenType::DO},{"until", TokenType::UNTIL},{"while", TokenType::WHILE},{"for", TokenType::FOR},
         {"false", TokenType::FALSE},{"true", TokenType::TRUE},{"null", TokenType::NONE},{"pi", TokenType::PI},
         {"package", TokenType::PACKAGE},{"static", TokenType::STATIC},{"final",TokenType::FINALLY},{"finally",TokenType::FINALLY},
-        {"extern",TokenType::EXTERN},{"override",TokenType::OVERRIDE},{"this",TokenType::THIS}};
+        {"extern",TokenType::EXTERN},{"override",TokenType::OVERRIDE},{"this",TokenType::THIS},{"typeid",TokenType::TYPEID}};
     // Token 类型到其名字的映射表
     inline const std::unordered_map<TokenType, std::string> names = {
         {TokenType::DEFAULT,"default"},{TokenType::THROW,"throw"},{TokenType::Scientific, "SCIENTIFIC"},{TokenType::Hexadecimal, "HEXADECIMAL"},
@@ -136,7 +138,8 @@ namespace ns{
         {TokenType::COMMA, ","},{TokenType::SEMICOLON, ";"},{TokenType::COLON, ":"},{TokenType::ILLEGAL, "ILLEGAL"},
         {TokenType::END, "END"},{TokenType::CONSTRUCT, ""},{TokenType::IDENT, "IDENT"},{TokenType::STATIC, "static"},
         {TokenType::UNTIL,"until"},{TokenType::COMMAND, "COMMAND"},{TokenType::OVERRIDE,"override"},{TokenType::EXTERN,"extern"},
-        {TokenType::FINAL,"final"},{TokenType::FINALLY,"finally"},{TokenType::THIS,"this"}};
+        {TokenType::FINAL,"final"},{TokenType::FINALLY,"finally"},{TokenType::THIS,"this"},{TokenType::ARROW,"->"},
+        {TokenType::TYPEID,"typeid"}};
     inline std::string getName(TokenType type){
         auto name=names.find(type);
         if(name != names.end()){

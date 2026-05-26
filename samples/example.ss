@@ -1,11 +1,5 @@
-# func f(i8 num){}
-# var a:string  = ""
-# f(a)
-
 class A{
-  private var a;
-  public func f() -> void{
-  }
+    private var a  =1
 }
 
-
+var a=new A

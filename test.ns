@@ -1,7 +1,10 @@
-func f1(){
-    var a
+class A{
+    private var a  =1
+    public func __toString__(){
+        return "hello"
+    }
 }
 
-func f2(){
-    var a
-}
+var a=new A
+
+print(a)

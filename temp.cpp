@@ -23,23 +23,11 @@ std::string ns_to_string(Ret(*func)(Args...)) {
 template<typename T>
 std::string ns_to_string(const T& obj) {return obj->__toString__();}
 class A {
-public:
-std::string __toString__(){
-    return "bcdshvjh";
-}
-public:
-void f(){
-    std::cout << ns_to_string("A\n");
-}
-};
-class B : public A {
-public:
-void f2(){
-    std::cout << ns_to_string("B\n");
-}
+private:
+    long long a = 1;
 public:
 std::string __toString__() {
-  return "{\n  instance of: B \n}";
+  return "{\n  instance of: A \n}";
 }
 };
 int main() {

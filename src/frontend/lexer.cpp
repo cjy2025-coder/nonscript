@@ -278,6 +278,11 @@ namespace ns
                 read();
                 t = Token({fileName, startRow, startCol}, "--", TokenType::LDEC);
             }
+            else if(peekChar() == '>'){
+                read();
+                t = Token({fileName,startRow,startCol},"->",TokenType::ARROW);
+
+            }
             else
                 t = Token({fileName, startRow, startCol}, "-", TokenType::MINUS);
             break;

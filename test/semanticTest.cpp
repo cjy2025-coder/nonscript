@@ -56,6 +56,7 @@ int main()
     ns::Lexer lexer(source, "example.ss");
     ns::Token token;
 
+    ns::typeManager::init();
     std::vector<ns::Token> tokens;
     while ((token = lexer.scan()).getType() != ns::TokenType::END)
     {
@@ -75,7 +76,6 @@ int main()
         return -1;
     }
     ns::SemanticAnalyzer * sa=new ns::SemanticAnalyzer(&lexer);
-    sa->setTypeManager(parser.getTypeManager());
     auto status=sa->check(program.get());
     if(!status){
         auto e = sa->what();

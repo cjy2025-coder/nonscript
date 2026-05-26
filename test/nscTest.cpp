@@ -63,6 +63,7 @@ int main(int argc, char* argv[]) {
     }
     tokens.push_back(token);
 
+    ns::typeManager::init();
     // 语法分析
     ns::Parser parser(tokens);
     parser.setLexer(&lexer);
@@ -71,7 +72,6 @@ int main(int argc, char* argv[]) {
 
     // 语义分析
     ns::SemanticAnalyzer sa(&lexer);
-    sa.setTypeManager(parser.getTypeManager());
     if (!sa.check(program.get())) ns::error(sa.what()->whats());
 
     // 代码生成

@@ -52,7 +52,7 @@ int main()
     std::string source = ss.str();
     ns::Lexer lexer(source, "example.ss");
     ns::Token token;
-
+    ns::typeManager::init();//初始化内置类型
     std::vector<ns::Token> tokens;
     while ((token = lexer.scan()).getType() != ns::TokenType::END)
     {

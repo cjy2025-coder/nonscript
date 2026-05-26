@@ -18,29 +18,33 @@ namespace ns
         INDEX,
         POINT // 成员访问运算符.
     };
+
+    #define CURRENT_LOCATION (current().getLocation())
     class Parser
     {
     private:
         std::vector<Token> tokens;
         int idx = 0;
     private:
-        ErrorManager *errorManager;
+        ErrorManager *em_;
         Lexer *mLexer;
-    private:
-        typeManager * types;
     public:
         ErrorManager *what()
         {
-            return errorManager;
+            return em_;
         }
 
     private:
-        void raiseError(ErrorType type, const std::string &e, sourceLocation location)
+        std::string get_code_line_string(sourceLocation sl)
         {
-            std::string msg = SourceUtil::getLineText(mLexer->getSource(), location.line);
-            msg += SourceUtil::getCaretPointer(location.col);
-            errorManager->report(ComilerError(type, e + "\n" + msg, location));
+            return "\n" + SourceUtil::getLineText(mLexer->getSource(), sl.line) + SourceUtil::getCaretPointer(sl.col);
         }
+        // void raiseError(ErrorType type, const std::string &e, sourceLocation location)
+        // {
+        //     std::string msg = SourceUtil::getLineText(mLexer->getSource(), location.line);
+        //     msg += SourceUtil::getCaretPointer(location.col);
+        //     em_->report(ComilerError(type, e + "\n" + msg, location));
+        // }
         // void error()
         TokenType current_token_type() const { return current().getType(); }
         Token current() const { return tokens[idx]; };
@@ -55,7 +59,7 @@ namespace ns
             }
             else
             {
-                raiseError(ErrorType::SYNTAX_ERROR, "expect "+getName(type)+" instead of got " + current().toString(), current().getLocation());
+                // raiseError(ErrorType::SYNTAX_ERROR, "expect "+getName(type)+" instead of got " + current().toString(), current().getLocation());
                 return false;
             }
         }
@@ -63,12 +67,7 @@ namespace ns
     public:
         Parser(std::vector<Token> tokens_) : tokens(tokens_)
         {
-            errorManager = new ErrorManager();
-            types=new typeManager();
-        }
-    public:
-        typeManager * getTypeManager() const{
-            return types;
+            em_ = new ErrorManager();
         }
     public:
         void setLexer(Lexer *lexer);

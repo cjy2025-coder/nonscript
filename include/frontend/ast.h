@@ -602,6 +602,12 @@ namespace ns
         {
             return stmts.empty();
         }
+        const Statement * const last_stmt() const{
+            if(stmts.empty()){
+                return nullptr;
+            }
+            return stmts.back();
+        }
     };
 
     class ArrayLiteral : public Expression
@@ -638,21 +644,6 @@ namespace ns
         {
             return isVariable;
         }
-    };
-    // 访问级别定义
-    enum class AccessLevel
-    {
-        Public,
-        Private,
-        Protected
-    };
-    // 成员类型分类
-    enum class MemberType
-    {
-        Field,
-        Method,
-        Constructor,
-        Static
     };
     // 成员结构
     struct Member
@@ -1054,6 +1045,7 @@ namespace ns
                 return "break;\n";
             else if (token.getType() == TokenType::CONTINUE)
                 return "continue;\n";
+            else return "";
         }
     };
 
@@ -1262,6 +1254,7 @@ namespace ns
     };
     typedef struct LoopVariable
     {
+        bool external_variable = false;
         std::unique_ptr<Ident> var;
         std::unique_ptr<Expression> value;
     } *PLoopVariable;

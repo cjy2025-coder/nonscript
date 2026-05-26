@@ -2,8 +2,25 @@
 #include <string>
 #include <map>
 #include <unordered_map>
+#include <variant>
+#include<vector>
 namespace ns
 {
+    // 访问级别定义
+    enum class AccessLevel
+    {
+        Public,
+        Private,
+        Protected
+    };
+    // 成员类型分类
+    enum class MemberType
+    {
+        Field,
+        Method,
+        Constructor,
+        Static
+    };
    class CplusplusTypeManager
    {
       std::unordered_map<std::string, std::string> type_mapper = {
@@ -25,13 +42,50 @@ namespace ns
       std::string alias;
       int id;
    } *_ptype;
+   typedef struct _FuncDetail
+    {
+        std::vector<_type *> param_types;
+        _type *return_type;
+        // 默认为false，[[noused]]
+        bool is_external_func = false;
+        // 默认为false, [[noused]]
+        bool is_builtin_func = false;
+        // 默认为false
+        bool is_unlimited_args_func = false;
+    } FuncDetail;
+    typedef struct _TypeInfo TypeInfo;
+    typedef struct _ArrayDetail
+    {
+        std::vector<TypeInfo *> elems_types;
+        int size;
+    } ArrayDetail;
+    typedef struct _MemDetail
+    {
+        TypeInfo *ti;
+        AccessLevel level;
+        MemberType type;
+    } MemDetail;
+    typedef struct _ClassDetail
+    {
+        // 表示父类
+        std::vector<TypeInfo *> parents;
+        // 类成员
+        std::unordered_map<std::string, MemDetail> mems;
+    } ClassDetail;
+    typedef struct _TypeInfo
+    {
+        _type *baseType;
+        std::variant<FuncDetail, ArrayDetail, ClassDetail> detail;
+    } TypeInfo;
+    extern TypeInfo *_errorType;
+
    class typeManager
    {
-      std::map<std::string, _type> types;
-      int id = 0;
-
+      static std::map<std::string,TypeInfo> tis_;
+      static int id_ ;
    private:
-      void defaultEmit()
+      // 提交内置的类型
+      static void defaultEmit()
       {
          emit("i8");
          emit("i16");
@@ -51,28 +105,26 @@ namespace ns
       }
 
    public:
-      void emit(std::string alias)
+      static void emit(std::string alias)
       {
-         _type _ = {};
-         _.alias = alias;
-         _.id = id++;
-         types[alias] = _;
+         _type *_ = new _type();
+         _->alias = alias;
+         _->id = id_++;
+         TypeInfo ti={};
+         ti.baseType = _;
+         tis_[alias] = ti;
       }
-      typeManager()
-      {
+      static void init(){
          defaultEmit();
       }
-      _type *find(std::string alias)
+      static TypeInfo *find(std::string alias)
       {
-         auto type = types.find(alias);
-         if (type == types.end())
+         auto ti = tis_.find(alias);
+         if (ti == tis_.end())
          {
             return nullptr;
          }
-         return &(type->second);
+         return &(ti->second);
       }
-      //    _type get(std::string alias) const{
-      //       return types.find(alias);
-      //    }
    };
 }

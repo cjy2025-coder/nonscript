@@ -18,12 +18,14 @@ namespace ns
     class ComilerError
     {
     private:
-        ErrorType type;  ///>错误类型
+        ErrorType type = ErrorType::SYNTAX_ERROR;  ///>错误类型
         std::string msg; ///>错误信息
         sourceLocation location;
     public:
         ComilerError(ErrorType type_,const std::string &msg_,const sourceLocation & location_ )
             : type(type_), msg(msg_),location(location_) {}
+        ComilerError(const std::string &msg_,const sourceLocation & location_ )
+            : msg(msg_),location(location_) {}
         ErrorType getType() const { return type; }
         std::string getFile() const { return location.filename; }
         std::string what() const
