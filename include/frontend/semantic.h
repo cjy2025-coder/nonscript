@@ -122,8 +122,8 @@ namespace ns
         }
         void init_builtin_funcs()
         {
-            add_builtin_func("@print", "void");
-            add_builtin_func("@scan", "void");
+            add_builtin_func("print", "void");
+            add_builtin_func("scan", "void");
         }
     public:
         SemanticAnalyzer(Lexer *_mLexer) :mLexer(_mLexer) {}

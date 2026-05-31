@@ -81,7 +81,7 @@ namespace ns
 
    class typeManager
    {
-      static std::map<std::string,TypeInfo> tis_;
+      static std::map<std::string,_type> tis_;
       static int id_ ;
    private:
       // 提交内置的类型
@@ -107,24 +107,24 @@ namespace ns
    public:
       static void emit(std::string alias)
       {
-         _type *_ = new _type();
-         _->alias = alias;
-         _->id = id_++;
-         TypeInfo ti={};
-         ti.baseType = _;
-         tis_[alias] = ti;
+         _type _ = {};
+         _.alias = alias;
+         _.id = id_++;
+         tis_[alias] = _;
       }
       static void init(){
          defaultEmit();
       }
       static TypeInfo *find(std::string alias)
       {
-         auto ti = tis_.find(alias);
-         if (ti == tis_.end())
+         auto it = tis_.find(alias);
+         if (it == tis_.end())
          {
             return nullptr;
          }
-         return &(ti->second);
+         TypeInfo * ti = new TypeInfo();
+         ti->baseType = &(it->second);
+         return ti;
       }
    };
 }

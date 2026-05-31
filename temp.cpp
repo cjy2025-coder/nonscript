@@ -22,15 +22,19 @@ std::string ns_to_string(Ret(*func)(Args...)) {
    return oss.str(); }
 template<typename T>
 std::string ns_to_string(const T& obj) {return obj->__toString__();}
-class A {
+class Student {
 private:
-    long long a = 1;
+    signed char score;
+protected:
+    std::string name;
 public:
-std::string __toString__() {
-  return "{\n  instance of: A \n}";
+void __construct__(){
+}
+public:
+std::string __toString__(){
+    return "Here is object info";
 }
 };
 int main() {
-A* a = new A();
-std::cout << ns_to_string(a);
+Student* s = new Student();
 }

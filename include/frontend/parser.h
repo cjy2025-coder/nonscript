@@ -19,12 +19,11 @@ namespace ns
         POINT // 成员访问运算符.
     };
 
-    #define CURRENT_LOCATION (current().getLocation())
+    #define CURRENT_LOCATION (current.getLocation())
     class Parser
     {
     private:
-        std::vector<Token> tokens;
-        int idx = 0;
+        Token current={},next={};
     private:
         ErrorManager *em_;
         Lexer *mLexer;
@@ -35,6 +34,10 @@ namespace ns
         }
 
     private:
+        void advance(){
+            current = next;
+            next = mLexer->scan();
+        }
         std::string get_code_line_string(sourceLocation sl)
         {
             return "\n" + SourceUtil::getLineText(mLexer->getSource(), sl.line) + SourceUtil::getCaretPointer(sl.col);
@@ -46,13 +49,12 @@ namespace ns
         //     em_->report(ComilerError(type, e + "\n" + msg, location));
         // }
         // void error()
-        TokenType current_token_type() const { return current().getType(); }
-        Token current() const { return tokens[idx]; };
-        Token peek(int offset = 1) const { return tokens[idx + offset]; };
-        void advance() { idx++; };
+        // TokenType current_token_type() const { return current().getType(); }
+        // Token current() const { return tokens[idx]; };
+        // Token peek(int offset = 1) const { return tokens[idx + offset]; };
         bool match(TokenType type)
         {
-            if (current().getType() == type)
+            if (current.getType() == type)
             {
                 // advance();
                 return true;
@@ -65,9 +67,13 @@ namespace ns
         }
         // Token consume(TokenType type,const std::string & error_msg);
     public:
-        Parser(std::vector<Token> tokens_) : tokens(tokens_)
+        Parser(Lexer * lexer)
         {
             em_ = new ErrorManager();
+            mLexer= lexer;
+            //初始时预先读一个token
+            next = mLexer->scan();
+            advance();
         }
     public:
         void setLexer(Lexer *lexer);

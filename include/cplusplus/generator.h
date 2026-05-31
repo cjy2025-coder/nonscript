@@ -318,7 +318,7 @@ namespace ns
             // ==============================
             // 内置函数：print
             // ==============================
-            if (func_name == "@print")
+            if (func_name == "print")
             {
                 std::string code = "std::cout << ";
                 for (size_t i = 0; i < args.size(); ++i)
@@ -332,14 +332,14 @@ namespace ns
                 return code;
             }
 
-            if (func_name == "@scan")
+            if (func_name == "scan")
             {
                 std::string code = "std::cin >> ";
                 for (size_t i = 0; i < args.size(); ++i)
                 {
                     if (i > 0)
                     {
-                        code += " << ";
+                        code += " >> ";
                     }
                     code += genExpression(args[i].get());
                 }

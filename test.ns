@@ -1,10 +1,15 @@
-class A{
-    private var a  =1
-    public func __toString__(){
-        return "hello"
+# class Person{
+#     protected var name:string
+# }
+class Student{
+    private var score:i8;
+    protected var name:string
+    public func __construct__(){
+
+    }
+    public func __toString__() -> string{
+        return "Here is object info";
     }
 }
-
-var a=new A
-
-print(a)
+var s = new Student()
+print(s)

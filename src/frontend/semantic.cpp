@@ -1,4 +1,5 @@
 #include "./frontend/semantic.h"
+#include <functional>
 
 namespace ns
 {
@@ -96,72 +97,96 @@ namespace ns
     }
     TypeInfo *SemanticAnalyzer::check_infix_expression(InfixExpression *expr)
     {
-        auto left = expr->getLeft();
-        auto left_type = check_expression(left); // 计算左侧表达式
-        bool hasError = false;
+        const auto &left = expr->getLeft();
+        auto left_type = check_expression(left);
         if (!left_type)
         {
-            raiseError(ErrorType::SEMANTIC_ERROR, "invalid expression: " + expr->getLeft()->toString(), expr->getLeft()->getToken().getLocation());
-            hasError = true;
+            raiseError(ErrorType::SEMANTIC_ERROR, "invalid left-hand expression in infix operation", left->getToken().getLocation());
+            MARK_ERROR;
         }
         else if (left_type == _errorType)
         {
-            hasError = true;
+            MARK_ERROR;
         }
-        auto right = expr->getRight();
+
+        const auto &right = expr->getRight();
         auto op = expr->getOperator();
-        if (op == ".") // 优先判断是否在访问类成员
+
+        // ---- 递归查找类成员（包括父类） ----
+        auto findMemberInClass = [&](const ClassDetail &detail, const std::string &member_name, auto &&self_ref) -> const MemDetail *
         {
-            auto t = st->find(left_type->baseType->alias);
-            auto t_ = std::get<ClassDetail>(t->type_info->detail);
-            auto _ = t_.mems.find(right->getLiteral());
-            if (_ == t_.mems.end())
+            // 在当前类中查找
+            auto it = detail.mems.find(member_name);
+            if (it != detail.mems.end())
+                return &(it->second);
+            // 递归查找父类
+            for (auto *parent_ti : detail.parents)
             {
-                raiseError(ErrorType::SEMANTIC_ERROR,
-                           "unkown member : " + right->getLiteral() + " of class " + left_type->baseType->alias,
-                           right->getToken().getLocation());
+                Symbol *parent_s = st->find(parent_ti->baseType->alias);
+                if (parent_s && std::holds_alternative<ClassDetail>(parent_s->type_info->detail))
+                {
+                    const auto &parent_detail = std::get<ClassDetail>(parent_s->type_info->detail);
+                    const MemDetail *found = self_ref(parent_detail, member_name, self_ref);
+                    if (found)
+                        return found;
+                }
+            }
+            return nullptr;
+        };
+
+        // ---- 成员访问 . ----
+        if (op == ".")
+        {
+            _type *base_type = left_type->baseType;
+            Symbol *s = st->find(base_type->alias);
+            if (!s || !std::holds_alternative<ClassDetail>(s->type_info->detail))
+            {
+                raiseError(ErrorType::SEMANTIC_ERROR, "type '" + base_type->alias + "' is not a class, cannot access member '" + right->getLiteral() + "'", left->getToken().getLocation());
                 MARK_ERROR;
             }
-            else if (_->second.level != AccessLevel::Public)
+            const auto &class_detail = std::get<ClassDetail>(s->type_info->detail);
+            const MemDetail *found = findMemberInClass(class_detail, right->getLiteral(), findMemberInClass);
+            if (!found)
             {
-                raiseError(ErrorType::SEMANTIC_ERROR,
-                           "invisiable member : " + right->getLiteral() + " of class " + left_type->baseType->alias,
-                           right->getToken().getLocation());
+                raiseError(ErrorType::SEMANTIC_ERROR, "type '" + base_type->alias + "' has no member named '" + right->getLiteral() + "'", right->getToken().getLocation());
                 MARK_ERROR;
             }
-            else
+            if (found->level != AccessLevel::Public)
             {
-                return _->second.ti;
+                raiseError(ErrorType::SEMANTIC_ERROR, "member '" + right->getLiteral() + "' of type '" + base_type->alias + "' is not accessible", right->getToken().getLocation());
+                MARK_ERROR;
             }
+            return found->ti;
         }
-        auto right_type = check_expression(right); // 计算右侧表达式
+
+        // ---- 右侧表达式 ----
+        auto right_type = check_expression(right);
         if (!right_type)
         {
-            raiseError(ErrorType::SEMANTIC_ERROR, "invalid expression: " + expr->getRight()->toString(), expr->getRight()->getToken().getLocation());
-            hasError = true;
+            raiseError(ErrorType::SEMANTIC_ERROR, "invalid right-hand expression in infix operation", right->getToken().getLocation());
+            MARK_ERROR;
         }
         else if (right_type == _errorType)
         {
-            hasError = true;
-        }
-        if (hasError)
-        {
             MARK_ERROR;
         }
+
+        // ---- 赋值 = ----
         if (op == "=")
-        { // 是赋值语句
+        {
             if (left_type->baseType != right_type->baseType &&
                 !(is_number(left_type->baseType) && is_number(right_type->baseType)))
             {
-                hasError = true;
-                raiseError(ErrorType::SEMANTIC_ERROR, "unmatch type for assignment statements: " + expr->toString(), expr->getToken().getLocation());
+                raiseError(ErrorType::SEMANTIC_ERROR,
+                    "cannot assign value of type '" + right_type->baseType->alias + "' to variable of type '" + left_type->baseType->alias + "'",
+                    left->getToken().getLocation());
+                MARK_ERROR;
             }
-            else
-            {
-                return typeManager::find(left_type->baseType->alias);
-            }
+            return typeManager::find(left_type->baseType->alias);
         }
-        else if (is_arithmetic_op(op))
+
+        // ---- 算术运算符 + - * / % ----
+        if (is_arithmetic_op(op))
         {
             if (is_number(left_type->baseType) && is_number(right_type->baseType))
             {
@@ -169,42 +194,151 @@ namespace ns
                 {
                     if (is_float(left_type->baseType))
                     {
-                        raiseError(ErrorType::SEMANTIC_ERROR, "Modulo operation requires integer types" + left->getLiteral(), left->getToken().getLocation());
+                        raiseError(ErrorType::SEMANTIC_ERROR, "modulo (%) requires integer type, but left operand is '" + left_type->baseType->alias + "'", left->getToken().getLocation());
                         MARK_ERROR;
                     }
                     if (is_float(right_type->baseType))
                     {
-                        raiseError(ErrorType::SEMANTIC_ERROR, "Modulo operation requires integer types" + right->getLiteral(), right->getToken().getLocation());
+                        raiseError(ErrorType::SEMANTIC_ERROR, "modulo (%) requires integer type, but right operand is '" + right_type->baseType->alias + "'", right->getToken().getLocation());
                         MARK_ERROR;
                     }
                 }
                 return get_wider_numeric_type(left_type, right_type);
             }
-            else if (op == "+")
-            { // 处理字符串加法
-                if (is_string(left_type->baseType) && is_string(right_type->baseType))
-                {
-                    return typeManager::find("string");
-                }
-                raiseError(ErrorType::SEMANTIC_ERROR,
-                           "unsupported operation + between ",
-                           right->getToken().getLocation());
-                MARK_ERROR;
-            }
+            raiseError(ErrorType::SEMANTIC_ERROR,
+                "operator '" + op + "' cannot be applied to operands of types '" + left_type->baseType->alias + "' and '" + right_type->baseType->alias + "'",
+                right->getToken().getLocation());
+            MARK_ERROR;
         }
-        else if (is_logic_op(op))
+
+        // ---- 逻辑运算符 && || ----
+        if (is_logic_op(op))
         {
             if (is_bool(left_type->baseType) && is_bool(right_type->baseType))
-            {
                 return left_type;
-            }
-        }
-        // else if(op == "."){
-        //     if(left_type->baseType == _type::OBJECT)
-        // }
-        else
+            raiseError(ErrorType::SEMANTIC_ERROR,
+                "operator '" + op + "' requires 'bool' operands, but got '" + left_type->baseType->alias + "' and '" + right_type->baseType->alias + "'",
+                right->getToken().getLocation());
             MARK_ERROR;
+        }
+
+        // ---- 其他运算符（==, !=, <, >, <=, >=, <<, >>, &, |, ^ 等） ----
+        raiseError(ErrorType::SEMANTIC_ERROR,
+            "unsupported operator '" + op + "' between types '" + left_type->baseType->alias + "' and '" + right_type->baseType->alias + "'",
+            right->getToken().getLocation());
+        MARK_ERROR;
     }
+// TypeInfo *SemanticAnalyzer::check_infix_expression(InfixExpression *expr)
+//     {
+//         auto left = expr->getLeft();
+//         auto left_type = check_expression(left); // 计算左侧表达式
+//         bool hasError = false;
+//         if (!left_type)
+//         {
+//             raiseError(ErrorType::SEMANTIC_ERROR, "invalid expression: " + expr->getLeft()->toString(), expr->getLeft()->getToken().getLocation());
+//             hasError = true;
+//         }
+//         else if (left_type == _errorType)
+//         {
+//             hasError = true;
+//         }
+//         auto right = expr->getRight();
+//         auto op = expr->getOperator();
+//         if (op == ".") // 优先判断是否在访问类成员
+//         {
+//             auto t = st->find(left_type->baseType->alias);
+//             auto t_ = std::get<ClassDetail>(t->type_info->detail);
+//             auto _ = t_.mems.find(right->getLiteral());
+//             if (_ == t_.mems.end())
+//             {
+//                 raiseError(ErrorType::SEMANTIC_ERROR,
+//                            "unkown member : " + right->getLiteral() + " of class " + left_type->baseType->alias,
+//                            right->getToken().getLocation());
+//                 MARK_ERROR;
+//             }
+//             else if (_->second.level != AccessLevel::Public)
+//             {
+//                 raiseError(ErrorType::SEMANTIC_ERROR,
+//                            "invisiable member : " + right->getLiteral() + " of class " + left_type->baseType->alias,
+//                            right->getToken().getLocation());
+//                 MARK_ERROR;
+//             }
+//             else
+//             {
+//                 return _->second.ti;
+//             }
+//         }
+//         auto right_type = check_expression(right); // 计算右侧表达式
+//         if (!right_type)
+//         {
+//             raiseError(ErrorType::SEMANTIC_ERROR, "invalid expression: " + expr->getRight()->toString(), expr->getRight()->getToken().getLocation());
+//             hasError = true;
+//         }
+//         else if (right_type == _errorType)
+//         {
+//             hasError = true;
+//         }
+//         if (hasError)
+//         {
+//             MARK_ERROR;
+//         }
+//         if (op == "=")
+//         { // 是赋值语句
+//             if (left_type->baseType != right_type->baseType &&
+//                 !(is_number(left_type->baseType) && is_number(right_type->baseType)))
+//             {
+//                 hasError = true;
+//                 raiseError(ErrorType::SEMANTIC_ERROR, "unmatch type for assignment statements: " + expr->toString(), expr->getToken().getLocation());
+//             }
+//             else
+//             {
+//                 return typeManager::find(left_type->baseType->alias);
+//             }
+//         }
+//         else if (is_arithmetic_op(op))
+//         {
+//             if (is_number(left_type->baseType) && is_number(right_type->baseType))
+//             {
+//                 if (op == "%")
+//                 {
+//                     if (is_float(left_type->baseType))
+//                     {
+//                         raiseError(ErrorType::SEMANTIC_ERROR, "Modulo operation requires integer types" + left->getLiteral(), left->getToken().getLocation());
+//                         MARK_ERROR;
+//                     }
+//                     if (is_float(right_type->baseType))
+//                     {
+//                         raiseError(ErrorType::SEMANTIC_ERROR, "Modulo operation requires integer types" + right->getLiteral(), right->getToken().getLocation());
+//                         MARK_ERROR;
+//                     }
+//                 }
+//                 return get_wider_numeric_type(left_type, right_type);
+//             }
+//             else if (op == "+")
+//             { // 处理字符串加法
+//                 if (is_string(left_type->baseType) && is_string(right_type->baseType))
+//                 {
+//                     return typeManager::find("string");
+//                 }
+//                 raiseError(ErrorType::SEMANTIC_ERROR,
+//                            "unsupported operation + between ",
+//                            right->getToken().getLocation());
+//                 MARK_ERROR;
+//             }
+//         }
+//         else if (is_logic_op(op))
+//         {
+//             if (is_bool(left_type->baseType) && is_bool(right_type->baseType))
+//             {
+//                 return left_type;
+//             }
+//         }
+//         // else if(op == "."){
+//         //     if(left_type->baseType == _type::OBJECT)
+//         // }
+//         else
+//             MARK_ERROR;
+//     }
     TypeInfo *SemanticAnalyzer::check_index_expression(IndexExpression *expr)
     {
         auto array = expr->getLeft();
@@ -372,7 +506,7 @@ namespace ns
         {
             MARK_ERROR;
         }
-        else if (typeInfo->baseType->alias != "func")
+        else if (typeInfo->baseType->alias != "func") // 检查括号左边是否是函数名
         {
             raiseError(ErrorType::SEMANTIC_ERROR,
                        "expect function " + func->getLiteral(),
@@ -685,17 +819,49 @@ namespace ns
         }
         std::vector<std::unique_ptr<Ident>> &parents = stmt->getBaseClasses();
         bool hasError = false;
+        ClassDetail clsd = {};
         for (auto &parent : parents)
         {
             const auto &check_result = check_ident(parent.get());
+            clsd.parents.push_back(check_result);
             if (_SEMANTIC_ERROR(check_result))
             {
                 hasError = true;
             }
         }
         auto &members = stmt->getMembers();
-        ClassDetail clsd = {};
+
+        // 递归将父类所有可见成员加入符号表
+        std::function<void(const std::string &)> importParentMems = [&](const std::string &parent_name)
+        {
+            Symbol *parent_s = st->find(parent_name);
+            if (!parent_s || !std::holds_alternative<ClassDetail>(parent_s->type_info->detail))
+                return;
+            const auto &parent_detail = std::get<ClassDetail>(parent_s->type_info->detail);
+            // 先递归导入父类的父类
+            for (auto *grandparent_ti : parent_detail.parents)
+            {
+                importParentMems(grandparent_ti->baseType->alias);
+            }
+            // 导入父类成员（不覆盖已定义的）
+            for (const auto &[mem_name, mem] : parent_detail.mems)
+            {
+                if (mem.level != AccessLevel::Private && !find_symbol(mem_name))
+                {
+                    Symbol *sym = new Symbol();
+                    sym->name = mem_name;
+                    sym->type_info = mem.ti;
+                    push_symbol(mem_name, sym);
+                }
+            }
+        };
+
         enter_scope();
+        // 先导入父类成员（让子类可以覆盖）
+        for (auto &parent : parents)
+        {
+            importParentMems(parent->getLiteral());
+        }
         for (auto &member : members)
         {
             auto stmt = member.declaration.get();
@@ -852,8 +1018,7 @@ namespace ns
     }
     TypeInfo *SemanticAnalyzer::check_expression_statement(ExpressionStatement *expr)
     {
-        auto exp = expr->expression();
-
+        const auto & exp = expr->expression();
         return check_expression(exp);
     }
     TypeInfo *SemanticAnalyzer::check_import_statement(ImportStatement *stmt)

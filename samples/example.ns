@@ -1,0 +1,13 @@
+class B{
+    public var b
+}
+class A extends B{
+    private var a
+    func getB(){
+        return b
+    }
+}
+
+var a = (new A).b
+
+

@@ -8,11 +8,11 @@ namespace ns
     }
     bool Parser::currentIs(TokenType type) const
     {
-        return current().getType() == type;
+        return current.getType() == type;
     }
     Priority Parser::get_precedence() const
     {
-        auto tt = current().getType();
+        auto tt = current.getType();
         switch (tt)
         {
         case TokenType::ASSIGN:
@@ -47,7 +47,7 @@ namespace ns
     std::unique_ptr<Program> Parser::parse()
     {
         std::unique_ptr<Program> program(new Program);
-        while (current().getType() != TokenType::END && current().getType() != TokenType::ILLEGAL)
+        while (current.getType() != TokenType::END && current.getType() != TokenType::ILLEGAL)
         {
             auto stmt = parse_statement();
             if (stmt == nullptr)
@@ -61,9 +61,9 @@ namespace ns
             }
             program->append(stmt.release());
         }
-        if (current().getType() == TokenType::ILLEGAL)
+        if (current.getType() == TokenType::ILLEGAL)
         {
-            em_->emit_unexpected_token_error(CURRENT_LOCATION, current().getLiteral(), get_code_line_string(CURRENT_LOCATION));
+            em_->emit_unexpected_token_error(CURRENT_LOCATION, current.getLiteral(), get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         return program;
@@ -75,7 +75,7 @@ namespace ns
         advance(); // 跳过 for 关键字
         if (!match(TokenType::LPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), "(", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "(", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance(); // 跳过左括号
@@ -85,103 +85,124 @@ namespace ns
         if (match(TokenType::VAR))
         {
             is_external_variable = false;
-            advance();
+            advance(); // 跳过 var 关键字
         }
         while (match(TokenType::IDENT))
         {
-            auto ident = parse_ident_expression();
-            // ident 不可能是空值
-            // if (!ident)
-            // {
-            //     return nullptr;
-            // }
-
+            auto ident = parse_ident_expression(); // ident不可能为空，所以不用检查
             // 显式申明了类型
             if (match(TokenType::COLON))
             {
                 // 跳过冒号
                 advance();
+                // 此时需要一个标识符来充当类型
                 if (!match(TokenType::IDENT))
                 {
-                    em_->emit_ident_type_missing_error(current().getLocation(), ident->getLiteral(), get_code_line_string(CURRENT_LOCATION));
+                    em_->emit_ident_type_missing_error(current.getLocation(), ident->getLiteral(), get_code_line_string(CURRENT_LOCATION));
                     return nullptr;
                 }
-
-                std::string vt = current().getLiteral();
+                
+                // 将显示声明的类型写入标识符 ast 结点
+                std::string vt = current.getLiteral();
                 const TypeInfo *const ti = typeManager::find(vt);
+
+                // 从类型表中检查当前类型是否合法
                 if (!ti)
                 {
-                    em_->emit_unknown_type_error(current().getLocation(), vt, get_code_line_string(CURRENT_LOCATION));
+                    em_->emit_unknown_type_error(current.getLocation(), vt, get_code_line_string(CURRENT_LOCATION));
                     return nullptr;
                 }
                 ident->setType(ti->baseType);
-                advance();
+                advance(); // 跳过声明的类型标识符
             }
-
-            if (!match(TokenType::ASSIGN))
+            // 进行了初始化
+            if(match(TokenType::ASSIGN)){
+                advance(); // 跳过等号;
+                auto rvalue = parse_expression(Priority::LOWEST);
+                if (!rvalue) // 初始化表达式有错
+                {
+                    return nullptr;
+                }
+                auto lv = std::make_unique<LoopVariable>();
+                lv->external_variable = is_external_variable;
+                lv->var = std::move(ident);
+                lv->value = std::move(rvalue);
+                loop->addVariable(std::move(lv));
+            }
+            else if(!is_external_variable) // 没有初始化，但是也并不是外部变量
             {
-                em_->emit_miss_token_error(current().getLocation(), "=", get_code_line_string(CURRENT_LOCATION));
+                em_->emit_miss_token_error(current.getLocation(), "=", get_code_line_string(CURRENT_LOCATION));
                 return nullptr;
             }
-            advance(); // 跳过等号;
-            auto rvalue = parse_expression(Priority::LOWEST);
-            if (!rvalue)
-            {
-                return nullptr;
-            }
-            auto lv = std::make_unique<LoopVariable>();
-            lv->external_variable = is_external_variable;
-            lv->var = std::move(ident);
-            lv->value = std::move(rvalue);
-            loop->addVariable(std::move(lv));
-
+            
             if(match(TokenType::COMMA)){
                 advance();
             }
             else if(!match(TokenType::SEMICOLON)){
-                em_->emit_miss_token_error(current().getLocation(),",",get_code_line_string(CURRENT_LOCATION));
+                em_->emit_miss_token_error(current.getLocation(),",",get_code_line_string(CURRENT_LOCATION));
                 return nullptr;
             }
         }
-        if (!match(TokenType::SEMICOLON))
-        {
-            em_->emit_miss_token_error(current().getLocation(), ";", get_code_line_string(CURRENT_LOCATION));
-            return nullptr;
+        // if (!match(TokenType::SEMICOLON))
+        // {
+        //     em_->emit_miss_token_error(current.getLocation(), ";", get_code_line_string(CURRENT_LOCATION));
+        //     return nullptr;
+        // }
+
+        advance(); // 跳过第一个分号
+
+        // 下面逻辑将判断当前 token 是否是分号
+        // 1）直接遇到了第二个分号，证明循环条件为空
+        //    此时保持条件为 nullptr
+        //    后续处理时通过判断指针是否为空，就可以判别是否声明了循环条件
+        // 2）否则直接尝试解析循环条件
+        if(!match(TokenType::SEMICOLON)){
+            auto condition = parse_expression(Priority::LOWEST); // 解析条件
+            if (!condition)
+            {
+                return nullptr;
+            }
+            loop->setConditon(std::move(condition));
+            if (!match(TokenType::SEMICOLON))
+            {
+                em_->emit_miss_token_error(current.getLocation(), ";", get_code_line_string(CURRENT_LOCATION));
+                return nullptr;
+            }
         }
-        advance(); // 跳过分号
-        auto condition = parse_expression(Priority::LOWEST);
-        if (!condition)
-        {
-            return nullptr;
-        }
-        loop->setConditon(std::move(condition));
-        if (!match(TokenType::SEMICOLON))
-        {
-            em_->emit_miss_token_error(current().getLocation(), ";", get_code_line_string(CURRENT_LOCATION));
-            return nullptr;
-        }
-        advance(); // 跳过分号
-        if (!currentIs(TokenType::RPAREN))
+        advance(); // 跳过第二个分号
+
+        // 下面逻辑将判断当前 token 是否是右括号
+        // 1）直接遇到了右括号，证明步进为空
+        //    此时保持步进为 nullptr
+        //    后续处理时通过判断指针是否为空，就可以判别是否声明了步进
+        // 2）否则直接尝试解析步进
+        if (!match(TokenType::RPAREN)){
             while (1)
             {
-                auto _ = parse_expression(Priority::LOWEST);
-                if (!_)
+                auto e = parse_expression(Priority::LOWEST);
+                if (!e)
                 {
                     return nullptr;
                 }
-                loop->addAction(std::move(_));
-                if (currentIs(TokenType::RPAREN) || currentIs(TokenType::END))
+                loop->addAction(std::move(e));
+                if (match(TokenType::RPAREN) || match(TokenType::END)) // 判断步进部分是否结束，遇到终止符时强制结束
                 {
                     break;
                 }
-                if (currentIs(TokenType::COMMA))
+
+                // 进入此处，表明步进声明并未结束
+                // 那么此时将转到处理下一个步进的操作
+                // 但是步进操作之间必须用 , 分隔
+                if (!match(TokenType::COMMA))
                 {
-                    advance(); // 跳过逗号
+                    em_->emit_miss_token_error(current.getLocation(), ",", get_code_line_string(CURRENT_LOCATION));
                 }
+                advance(); // 跳过逗号
             }
-        if (!match(TokenType::RPAREN))
+        }
+        if (!match(TokenType::RPAREN)) // 不是右括号，那么证明右括号缺失
         {
-            em_->emit_miss_token_error(current().getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance(); // 跳过右括号
@@ -191,9 +212,9 @@ namespace ns
             return nullptr;
         }
         loop->setBody(std::move(body));
-        if (currentIs(TokenType::SEMICOLON))
+        if (match(TokenType::SEMICOLON))
         {
-            advance(); // 跳过尾随分号
+            advance(); // 跳过可能的尾随分号
         }
         return loop;
     }
@@ -208,13 +229,13 @@ namespace ns
         }
         if (!match(TokenType::CATCH))
         {
-            em_->emit_miss_token_error(current().getLocation(), "catch", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "catch", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance(); // 跳过catch关键字
         if (!match(TokenType::LPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), "(", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "(", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance(); // 跳过左括号
@@ -229,7 +250,7 @@ namespace ns
         }
         if (!match(TokenType::RPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance(); // 跳过右括号
@@ -251,7 +272,7 @@ namespace ns
         ie->setIndex(e.release());
         if (!match(TokenType::RBRACKET))
         {
-            em_->emit_miss_token_error(current().getLocation(), "[", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "[", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance();
@@ -260,7 +281,7 @@ namespace ns
     std::vector<std::unique_ptr<Expression>> Parser::parse_expression_list(TokenType end, int &error)
     {
         std::vector<std::unique_ptr<Expression>> args;
-        if (peek().getType() == end)
+        if (next.getType() == end)
         {
             advance(); // 跳至右中括号
             advance(); // 跳至下一Token
@@ -269,14 +290,14 @@ namespace ns
         advance();
         auto arg = parse_expression(Priority::LOWEST);
         args.emplace_back(arg.release());
-        while (current().getType() == TokenType::COMMA)
+        while (current.getType() == TokenType::COMMA)
         {
             advance();
             args.emplace_back(parse_expression(Priority::LOWEST).release());
         }
         if (!match(end))
         {
-            em_->emit_miss_token_error(current().getLocation(), getName(end), get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), getName(end), get_code_line_string(CURRENT_LOCATION));
             error = 1;
             return {};
         }
@@ -286,7 +307,7 @@ namespace ns
 
     std::unique_ptr<ArrayLiteral> Parser::parse_array_expression()
     {
-        std::unique_ptr<ArrayLiteral> arr(new ArrayLiteral(current()));
+        std::unique_ptr<ArrayLiteral> arr(new ArrayLiteral(current));
         int error = 0;
         auto elems = parse_expression_list(TokenType::RBRACKET, error);
         if (error)
@@ -301,7 +322,7 @@ namespace ns
     { // 进来时token为左括号
         std::vector<std::shared_ptr<FuncParam>> params;
         advance();                                    // 跳过左括号
-        if (current().getType() == TokenType::RPAREN) // 函数参数为空
+        if (current.getType() == TokenType::RPAREN) // 函数参数为空
         {
             advance();
             return {};
@@ -311,11 +332,11 @@ namespace ns
         {
             if (!match(TokenType::IDENT))
             {
-                em_->emit_func_param_miss_type_error(current().getLocation(), current().getLiteral(), get_code_line_string(CURRENT_LOCATION));
+                em_->emit_func_param_miss_type_error(current.getLocation(), current.getLiteral(), get_code_line_string(CURRENT_LOCATION));
                 error = 1;
                 return {};
             }
-            auto &&token = current();
+            auto &&token = current;
             auto type = parse_ident_expression();
             auto _ = typeManager::find(type->getLiteral());
             if (!_)
@@ -324,7 +345,7 @@ namespace ns
                 em_->emit_unknown_type_error(token.getLocation(), token.getLiteral(), get_code_line_string(token.getLocation()));
                 return {};
             }
-            if (current().getType() != TokenType::IDENT)
+            if (current.getType() != TokenType::IDENT)
             { // 类型后没有形参名
                 error = 1;
                 em_->emit_func_param_miss_name_error(token.getLocation(), token.getLiteral(), get_code_line_string(token.getLocation()));
@@ -334,23 +355,23 @@ namespace ns
             ident->setType(_->baseType);
             auto param = std::make_shared<FuncParam>();
             param->name = std::move(ident);
-            if (current().getType() == TokenType::ASSIGN)
+            if (current.getType() == TokenType::ASSIGN)
             {              // 函数参数有初始值
                 advance(); // 跳过等号
                 auto val = parse_expression(Priority::LOWEST);
                 if (!val)
                 {
-                    em_->emit_miss_expression_error(current().getLocation(), get_code_line_string(CURRENT_LOCATION));
+                    em_->emit_miss_expression_error(current.getLocation(), get_code_line_string(CURRENT_LOCATION));
                     error = 1;
                     return {};
                 }
                 param->init = std::move(val);
             }
             params.emplace_back(param);
-        } while (current().getType() == TokenType::COMMA && (advance(), true));
+        } while (current.getType() == TokenType::COMMA && (advance(), true));
         if (!match(TokenType::RPAREN))
         { // 希望遇到右括号以结束参数申明
-            em_->emit_miss_token_error(current().getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
             error = 1;
             return {};
         }
@@ -363,15 +384,15 @@ namespace ns
         advance(); // 跳过func关键字
         if (!match(TokenType::IDENT))
         { // func关键字后为函数名，应为标识符
-            em_->emit_func_name_missing_error(current().getLocation(), get_code_line_string(CURRENT_LOCATION));
+            em_->emit_func_name_missing_error(current.getLocation(), get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
-        std::unique_ptr<FuncDecl> func = std::make_unique<FuncDecl>(current());
-        const std::string &func_name = current().getLiteral();
+        std::unique_ptr<FuncDecl> func = std::make_unique<FuncDecl>(current);
+        const std::string &func_name = current.getLiteral();
         advance(); // 跳过标识符
         if (!match(TokenType::LPAREN))
         { // 判断函数名后是否有左括号
-            em_->emit_miss_token_error(current().getLocation(), "(", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "(", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         int error = 0;
@@ -386,14 +407,14 @@ namespace ns
             advance(); // 跳过 ->
             if (!match(TokenType::IDENT))
             {
-                em_->emit_func_return_type_missing_error(current().getLocation(), get_code_line_string(CURRENT_LOCATION));
+                em_->emit_func_return_type_missing_error(current.getLocation(), get_code_line_string(CURRENT_LOCATION));
                 return nullptr;
             }
-            const std::string &type = current().getLiteral();
+            const std::string &type = current.getLiteral();
             TypeInfo *const &ti = typeManager::find(type);
             if (!ti)
             {
-                em_->emit_unknown_type_error(current().getLocation(), type, get_code_line_string(current().getLocation()));
+                em_->emit_unknown_type_error(current.getLocation(), type, get_code_line_string(current.getLocation()));
                 return nullptr;
             }
             func->setRetType(ti->baseType);
@@ -404,16 +425,16 @@ namespace ns
         //     advance();
         //     if (!match(TokenType::GT))
         //     {
-        //         em_->emit_miss_token_error(current().getLocation(),">",get_code_line_string(CURRENT_LOCATION));
+        //         em_->emit_miss_token_error(current.getLocation(),">",get_code_line_string(CURRENT_LOCATION));
         //         return nullptr;
         //     }
         //     advance();
         //     if (!match(TokenType::IDENT))
         //     {
-        //         em_->emit_func_return_type_missing_error(current().getLocation(),get_code_line_string(CURRENT_LOCATION));
+        //         em_->emit_func_return_type_missing_error(current.getLocation(),get_code_line_string(CURRENT_LOCATION));
         //         return nullptr;
         //     }
-        //     auto token = current();
+        //     auto token = current;
         //     auto _ = parse_ident_expression();
         //     if (!_)
         //     {
@@ -429,13 +450,13 @@ namespace ns
         // }
         else if (is_extern_func)
         { // 是 extern 函数必须声明返回值类型
-            em_->emit_external_func_miss_return_type_error(current().getLocation(), func_name, get_code_line_string(CURRENT_LOCATION));
+            em_->emit_external_func_miss_return_type_error(current.getLocation(), func_name, get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         if (is_extern_func)
         {
             func->mark_external();
-            if (current_token_type() == TokenType::SEMICOLON)
+            if (match(TokenType::SEMICOLON))
             { // 跳过可能的尾随分号
                 advance();
             }
@@ -443,7 +464,7 @@ namespace ns
         }
         if (!match(TokenType::LBPAREN))
         { // 希望遇到左大括号
-            em_->emit_miss_token_error(current().getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         // advance(); // 跳过左大括号
@@ -453,7 +474,7 @@ namespace ns
             return nullptr;
         }
         func->setBody(body.release());
-        // auto it = current();
+        // auto it = current;
         return func;
     }
 
@@ -461,19 +482,19 @@ namespace ns
     {
         if (!match(TokenType::LBPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
-        std::unique_ptr<BlockStatement> bstmt(new BlockStatement(current()));
+        std::unique_ptr<BlockStatement> bstmt(new BlockStatement(current));
         advance();
-        while (current().getType() != TokenType::RBPAREN && current().getType() != TokenType::END)
+        while (current.getType() != TokenType::RBPAREN && current.getType() != TokenType::END)
         {
             auto stmt = parse_statement();
             if (stmt == nullptr)
                 return nullptr;
             if (typeid(*stmt) == typeid(ShortStatement) && !loop) // 除了循环语句外，其它语句不能出现break,continue
             {
-                em_->emit_unexpected_token_error(current().getLocation(), stmt->toString(), get_code_line_string(CURRENT_LOCATION));
+                em_->emit_unexpected_token_error(current.getLocation(), stmt->toString(), get_code_line_string(CURRENT_LOCATION));
                 return nullptr;
             }
             if (stmt != nullptr)
@@ -482,7 +503,7 @@ namespace ns
         }
         if (!match(TokenType::RBPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), "}", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "}", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance(); // 跳过右大括号
@@ -491,7 +512,7 @@ namespace ns
 
     std::unique_ptr<ExpressionStatement> Parser::parse_expression_statement()
     {
-        std::unique_ptr<ExpressionStatement> estmt(new ExpressionStatement(current()));
+        std::unique_ptr<ExpressionStatement> estmt(new ExpressionStatement(current));
         auto e = parse_expression(Priority::LOWEST);
         if (e == nullptr)
         {
@@ -499,8 +520,7 @@ namespace ns
             return nullptr;
         }
         estmt->setExpression(e.release());
-        auto it = idx;
-        if (current().getType() == TokenType::SEMICOLON)
+        if (current.getType() == TokenType::SEMICOLON)
             advance();
         return estmt;
     }
@@ -508,20 +528,20 @@ namespace ns
     std::unique_ptr<ClassLiteral> Parser::parse_class_statement()
     {
         advance(); // 跳过class关键字
-        if (current_token_type() != TokenType::IDENT)
+        if (!match(TokenType::IDENT))
         {
-            em_->emit_miss_class_name_error(current().getLocation(), get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_class_name_error(current.getLocation(), get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
-        std::unique_ptr<ClassLiteral> c(new ClassLiteral(current())); // 将类名传入
-        typeManager::emit(current().getLiteral());                    // 注册类到类型系统
+        std::unique_ptr<ClassLiteral> c(new ClassLiteral(current)); // 将类名传入
+        typeManager::emit(current.getLiteral());                    // 注册类到类型系统
         advance();
-        if (current().getType() == TokenType::EXTENDS)
+        if (current.getType() == TokenType::EXTENDS)
         {              // 如果有父类
             advance(); // 跳过extends关键字
-            if (current_token_type() != TokenType::IDENT)
+            if (!match(TokenType::IDENT))
             {
-                em_->emit_miss_parent_class_name_error(current().getLocation(), get_code_line_string(CURRENT_LOCATION));
+                em_->emit_miss_parent_class_name_error(current.getLocation(), get_code_line_string(CURRENT_LOCATION));
                 return nullptr;
             }
             auto id = parse_ident_expression(); // 解析父类名
@@ -530,12 +550,12 @@ namespace ns
                 return nullptr;
             }
             c->addBaseClass(std::move(id)); // 设置父类
-            while (current_token_type() == TokenType::COMMA)
+            while (match(TokenType::COMMA))
             {              // 如果有多个父类
                 advance(); // 跳过逗号
-                if (current_token_type() != TokenType::IDENT)
+                if (!match(TokenType::IDENT))
                 {
-                    em_->emit_miss_parent_class_name_error(current().getLocation(), get_code_line_string(CURRENT_LOCATION));
+                    em_->emit_miss_parent_class_name_error(current.getLocation(), get_code_line_string(CURRENT_LOCATION));
                     return nullptr;
                 }
                 auto id = parse_ident_expression();
@@ -549,23 +569,23 @@ namespace ns
         }
         if (!match(TokenType::LBPAREN)) // 如果不是左大括号，证明申明有误
         {
-            em_->emit_miss_token_error(current().getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance();                                                                                 // 跳过左大括号
-        while (current().getType() != TokenType::RBPAREN && current().getType() != TokenType::END) // 解析类成员知道结束或者源文件到头
+        while (current.getType() != TokenType::RBPAREN && current.getType() != TokenType::END) // 解析类成员知道结束或者源文件到头
         {
-            if (current().getType() == TokenType::PRIVATE)
+            if (current.getType() == TokenType::PRIVATE)
             { // 遇到private关键字
                 // bool isStatic = false;
-                auto old_token = current();
+                auto old_token = current;
                 advance();
                 /*if (token.getType() == TokenType::STATIC)
                 {
                     advance();
                     isStatic = true;
                 }*/
-                if (current().getType() == TokenType::FUNC)
+                if (current.getType() == TokenType::FUNC)
                 { // 遇到函数申明
                     auto stmt = parse_statement();
                     if (stmt == nullptr)
@@ -589,7 +609,7 @@ namespace ns
                     return nullptr;
                 }
             }
-            else if (current().getType() == TokenType::PUBLIC)
+            else if (current.getType() == TokenType::PUBLIC)
             { // 遇到public关键字
                 advance();
                 /*if (token.getType() == TokenType::STATIC)
@@ -597,7 +617,7 @@ namespace ns
                     advance();
                     isStatic = true;
                 }*/
-                if (current().getType() == TokenType::FUNC)
+                if (current.getType() == TokenType::FUNC)
                 { // 遇到函数申明
                     auto stmt = parse_statement();
                     if (stmt == nullptr)
@@ -606,7 +626,7 @@ namespace ns
                     }
                     c->addMember(AccessLevel::Public, MemberType::Method, std::move(stmt));
                 }
-                else if (current().getType() == TokenType::VAR)
+                else if (current.getType() == TokenType::VAR)
                 { // 遇到变量申明
                     auto stmt = parse_statement();
                     if (stmt == nullptr)
@@ -617,11 +637,11 @@ namespace ns
                 }
                 else
                 {
-                    em_->emit_invalid_token_after_contorller_for_class(current().getLocation(), "public", get_code_line_string(CURRENT_LOCATION));
+                    em_->emit_invalid_token_after_contorller_for_class(current.getLocation(), "public", get_code_line_string(CURRENT_LOCATION));
                     return nullptr;
                 }
             }
-            else if (current().getType() == TokenType::PROTECTED)
+            else if (current.getType() == TokenType::PROTECTED)
             { // 遇到protected关键字
                 advance();
                 /*if (token.getType() == TokenType::STATIC)
@@ -629,7 +649,7 @@ namespace ns
                     advance();
                     isStatic = true;
                 }*/
-                if (current().getType() == TokenType::FUNC)
+                if (current.getType() == TokenType::FUNC)
                 { // 遇到函数申明
                     auto stmt = parse_statement();
                     if (stmt == nullptr)
@@ -638,7 +658,7 @@ namespace ns
                     }
                     c->addMember(AccessLevel::Protected, MemberType::Method, std::move(stmt));
                 }
-                else if (current().getType() == TokenType::VAR)
+                else if (current.getType() == TokenType::VAR)
                 { // 遇到变量申明
                     auto stmt = parse_statement();
                     if (stmt == nullptr)
@@ -649,7 +669,7 @@ namespace ns
                 }
                 else
                 {
-                    em_->emit_invalid_token_after_contorller_for_class(current().getLocation(), "protected", get_code_line_string(CURRENT_LOCATION));
+                    em_->emit_invalid_token_after_contorller_for_class(current.getLocation(), "protected", get_code_line_string(CURRENT_LOCATION));
                     return nullptr;
                 }
             }
@@ -660,7 +680,7 @@ namespace ns
                     advance();
                     isStatic = true;
                 }*/
-                if (current().getType() == TokenType::FUNC)
+                if (current.getType() == TokenType::FUNC)
                 { // 遇到函数申明
                     auto stmt = parse_statement();
                     if (stmt == nullptr)
@@ -669,7 +689,7 @@ namespace ns
                     }
                     c->addMember(AccessLevel::Private, MemberType::Method, std::move(stmt));
                 }
-                else if (current().getType() == TokenType::VAR)
+                else if (current.getType() == TokenType::VAR)
                 { // 遇到变量申明
                     auto stmt = parse_statement();
                     if (stmt == nullptr)
@@ -680,26 +700,26 @@ namespace ns
                 }
                 else
                 {
-                    em_->emit_invalid_class_member_error(current().getLocation(), current().getLiteral(), get_code_line_string(CURRENT_LOCATION));
+                    em_->emit_invalid_class_member_error(current.getLocation(), current.getLiteral(), get_code_line_string(CURRENT_LOCATION));
                     return nullptr;
                 }
             }
             // advance();
         }
-        if (current().getType() == TokenType::END)
+        if (current.getType() == TokenType::END)
         {
-            em_->emit_miss_token_error(current().getLocation(), "}", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "}", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance(); // 跳过右大括号
-        auto t = current();
-        if (current().getType() == TokenType::SEMICOLON) // 如果结尾是分号，跳过
+        auto t = current;
+        if (current.getType() == TokenType::SEMICOLON) // 如果结尾是分号，跳过
             advance();
         return c;
     }
     std::unique_ptr<ThrowStatement> Parser::parse_throw_statement()
     {
-        auto stmt = std::make_unique<ThrowStatement>(current());
+        auto stmt = std::make_unique<ThrowStatement>(current);
         advance(); // 跳过 throw 关键字
         auto exception = parse_expression(Priority::LOWEST);
         if (!exception)
@@ -715,7 +735,7 @@ namespace ns
     }
     std::unique_ptr<Statement> Parser::parse_statement()
     {
-        switch (current().getType())
+        switch (current.getType())
         {
         case TokenType::END:
             return nullptr;
@@ -749,25 +769,25 @@ namespace ns
     std::unique_ptr<Statement> Parser::parse_extern_prefix()
     {
         advance(); // 跳过 extern 关键字
-        if (current_token_type() == TokenType::FUNC)
+        if (match(TokenType::FUNC))
         {
             return parse_func_statement(true); // 返回Statement 子类的std::unique指针
         }
-        em_->emit_expect_but_got_error(current().getLocation(), "func", current().getLiteral(), get_code_line_string(CURRENT_LOCATION));
+        em_->emit_expect_but_got_error(current.getLocation(), "func", current.getLiteral(), get_code_line_string(CURRENT_LOCATION));
         return nullptr;
     }
     std::unique_ptr<ShortStatement> Parser::parse_short_statement()
     {
-        std::unique_ptr<ShortStatement> stmt(new ShortStatement(current()));
+        std::unique_ptr<ShortStatement> stmt(new ShortStatement(current));
         advance();
-        if (current().getType() == TokenType::SEMICOLON)
+        if (current.getType() == TokenType::SEMICOLON)
             advance();
         return stmt;
     }
     std::unique_ptr<DeclareStatement> Parser::parse_declare_statement()
     {
-        bool variable = current().getType() == TokenType::VAR; // 判断是否为常量声明
-        std::unique_ptr<DeclareStatement> stmt(new DeclareStatement(current(), variable));
+        bool variable = current.getType() == TokenType::VAR; // 判断是否为常量声明
+        std::unique_ptr<DeclareStatement> stmt(new DeclareStatement(current, variable));
         advance(); // 跳过var/const关键字
         Ident *ident = nullptr;
         Expression *exp = nullptr;
@@ -775,23 +795,23 @@ namespace ns
         {
             if (!match(TokenType::IDENT))
             {
-                em_->emit_ident_missing_error(current().getLocation(), get_code_line_string(CURRENT_LOCATION));
+                em_->emit_ident_missing_error(current.getLocation(), get_code_line_string(CURRENT_LOCATION));
                 return nullptr;
             }
-            ident = new Ident(current());
+            ident = new Ident(current);
             advance();
-            if (current().getType() == TokenType::COLON)
+            if (current.getType() == TokenType::COLON)
             { // 遇到冒号，证明要申明类型
                 advance();
                 if (!match(TokenType::IDENT))
                 {
-                    em_->emit_ident_type_missing_error(current().getLocation(), ident->getLiteral(), get_code_line_string(CURRENT_LOCATION));
+                    em_->emit_ident_type_missing_error(current.getLocation(), ident->getLiteral(), get_code_line_string(CURRENT_LOCATION));
                     return nullptr;
                 }
-                auto type = typeManager::find(current().getLiteral());
+                auto type = typeManager::find(current.getLiteral());
                 if (!type)
                 { // 不存在的类型
-                    em_->emit_unknown_type_error(current().getLocation(), current().getLiteral(), get_code_line_string(CURRENT_LOCATION));
+                    em_->emit_unknown_type_error(current.getLocation(), current.getLiteral(), get_code_line_string(CURRENT_LOCATION));
                     return nullptr;
                 }
                 ident->setType(type->baseType);
@@ -803,12 +823,12 @@ namespace ns
             // }
             if (!variable && !match(TokenType::ASSIGN))
             {
-                em_->emit_contrant_not_init_error(current().getLocation(), ident->getLiteral(), get_code_line_string(CURRENT_LOCATION));
+                em_->emit_contrant_not_init_error(current.getLocation(), ident->getLiteral(), get_code_line_string(CURRENT_LOCATION));
                 return nullptr;
             }
-            if (current().getType() == TokenType::ASSIGN)
+            if (current.getType() == TokenType::ASSIGN)
             { // 遇到有初始化的申明
-                const auto &old_token = current();
+                const auto &old_token = current;
                 advance(); // 跳过等号
                 exp = parse_expression(Priority::LOWEST).release();
                 if (!exp)
@@ -851,7 +871,7 @@ namespace ns
             {
                 stmt->add(ident, nullptr);
             }
-            if (current().getType() == TokenType::COMMA)
+            if (current.getType() == TokenType::COMMA)
             {
                 advance();
             }
@@ -860,7 +880,7 @@ namespace ns
                 break;
             }
         }
-        if (current().getType() == TokenType::SEMICOLON)
+        if (current.getType() == TokenType::SEMICOLON)
         {
             advance();
         }
@@ -872,7 +892,7 @@ namespace ns
         advance(); // 跳过 func 关键字
         if (!match(TokenType::LPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         int error = 0;
@@ -886,14 +906,14 @@ namespace ns
             advance(); // 跳过 ->
             if (!match(TokenType::IDENT))
             {
-                em_->emit_func_return_type_missing_error(current().getLocation(), get_code_line_string(CURRENT_LOCATION));
+                em_->emit_func_return_type_missing_error(current.getLocation(), get_code_line_string(CURRENT_LOCATION));
                 return nullptr;
             }
-            const std::string &type = current().getLiteral();
+            const std::string &type = current.getLiteral();
             TypeInfo *const &ti = typeManager::find(type);
             if (!ti)
             {
-                em_->emit_unknown_type_error(current().getLocation(), type, get_code_line_string(current().getLocation()));
+                em_->emit_unknown_type_error(current.getLocation(), type, get_code_line_string(current.getLocation()));
                 return nullptr;
             }
             exp->setRetType(ti->baseType);
@@ -902,7 +922,7 @@ namespace ns
         exp->setParams(params);
         if (!match(TokenType::LBPAREN))
         { // 希望遇到左大括号
-            em_->emit_miss_token_error(current().getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         // advance(); // 跳过左大括号
@@ -920,7 +940,7 @@ namespace ns
         advance(); // 跳过 if 关键字
         if (!match(TokenType::LPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), "(", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "(", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance();
@@ -931,12 +951,12 @@ namespace ns
         ifstmt->setCondition(condition.release());
         if (!match(TokenType::RPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance(); // 跳过右括号
         std::unique_ptr<BlockStatement> body(new BlockStatement());
-        if (current().getType() != TokenType::LBPAREN)
+        if (current.getType() != TokenType::LBPAREN)
         {
             auto consequence = parse_statement();
             if (consequence == nullptr)
@@ -948,11 +968,11 @@ namespace ns
             body = parse_blockstatement(0);
         }
         ifstmt->setConsequence(body.release());
-        if (current().getType() == TokenType::ELSE)
+        if (current.getType() == TokenType::ELSE)
         {
             advance();
             std::unique_ptr<BlockStatement> body_(new BlockStatement());
-            if (current().getType() != TokenType::LBPAREN)
+            if (current.getType() != TokenType::LBPAREN)
             {
                 auto al = parse_statement();
                 if (al == nullptr)
@@ -972,7 +992,7 @@ namespace ns
         advance();
         if (!match(TokenType::LPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), "(", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "(", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance();
@@ -984,13 +1004,13 @@ namespace ns
         we->setCondtion(condition.release());
         if (!match(TokenType::RPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance();
         if (!match(TokenType::LBPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         auto body = parse_blockstatement(1);
@@ -1006,7 +1026,7 @@ namespace ns
         advance();
         if (!match(TokenType::LPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), "(", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "(", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance();
@@ -1018,13 +1038,13 @@ namespace ns
         loop->setCondtion(condition.release());
         if (!match(TokenType::RPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance();
         if (!match(TokenType::LBPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         auto body = parse_blockstatement(1);
@@ -1039,7 +1059,7 @@ namespace ns
         advance(); // 跳过switch关键字
         if (!match(TokenType::LPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), "(", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "(", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance(); // 跳过左括号
@@ -1051,17 +1071,17 @@ namespace ns
         expr->setExpr(std::move(_));
         if (!match(TokenType::RPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance(); // 跳过右括号
         if (!match(TokenType::LBPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "{", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance(); // 跳过左大括号
-        while (current().getType() == TokenType::CASE)
+        while (current.getType() == TokenType::CASE)
         {
             advance(); // 跳过case关键字
             auto value = parse_expression(Priority::LOWEST);
@@ -1071,7 +1091,7 @@ namespace ns
             }
             if (!match(TokenType::COLON))
             {
-                em_->emit_miss_token_error(current().getLocation(), ":", get_code_line_string(CURRENT_LOCATION));
+                em_->emit_miss_token_error(current.getLocation(), ":", get_code_line_string(CURRENT_LOCATION));
                 return nullptr;
             }
             advance(); // 跳过冒号
@@ -1094,7 +1114,7 @@ namespace ns
             advance(); // 跳过 default 关键字
             if (!match(TokenType::COLON))
             {
-                em_->emit_miss_token_error(current().getLocation(), ":", get_code_line_string(CURRENT_LOCATION));
+                em_->emit_miss_token_error(current.getLocation(), ":", get_code_line_string(CURRENT_LOCATION));
                 return nullptr;
             }
             advance(); // 跳过冒号
@@ -1109,18 +1129,18 @@ namespace ns
         }
         if (!match(TokenType::RBPAREN))
         {
-            em_->emit_miss_token_error(current().getLocation(), "}", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "}", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
         advance(); // 跳过右大括号
-        // if(current().getType() == TokenType::SEMICOLON){
+        // if(current.getType() == TokenType::SEMICOLON){
         //     advance();//跳过尾随分号
         // }
         return expr;
     }
     std::unique_ptr<Expression> Parser::parse_prefix_expression()
     {
-        auto tt = current().getType();
+        auto tt = current.getType();
         switch (tt)
         {
         case TokenType::SWITCH:
@@ -1148,13 +1168,13 @@ namespace ns
             return parse_array_expression();
         case TokenType::THIS:
         {
-            auto current_token = current();
+            auto current_token = current;
             advance();
             return std::make_unique<ThisExpr>(current_token);
         }
         case TokenType::NONE:
         {
-            auto current_token = current();
+            auto current_token = current;
             advance();
             return std::make_unique<NullLiteral>(current_token);
         }
@@ -1165,7 +1185,7 @@ namespace ns
         case TokenType::LDEC:
         case TokenType::TYPEID:
         {
-            Token op = current();
+            Token op = current;
             advance();
             auto right = parse_expression(Priority::PREFIX);
             auto ret = std::make_unique<PrefixExpression>(op);
@@ -1176,7 +1196,7 @@ namespace ns
         // new关键字
         case TokenType::NEW:
         {
-            Token op = current();
+            Token op = current;
             advance();
             auto right = parse_expression(Priority::NEW);
             // std::cout << right->toString() << std::endl;
@@ -1193,7 +1213,7 @@ namespace ns
             if (!match(TokenType::RPAREN))
             {
                 // error("缺少右括号 ')'");
-                em_->emit_miss_token_error(current().getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
+                em_->emit_miss_token_error(current.getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
                 return nullptr;
             }
             advance(); // 跳过 ')'
@@ -1201,7 +1221,7 @@ namespace ns
         }
 
         default:
-            em_->emit_unexpected_token_error(current().getLocation(), current().getLiteral(), get_code_line_string(CURRENT_LOCATION));
+            em_->emit_unexpected_token_error(current.getLocation(), current.getLiteral(), get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
     }
@@ -1210,12 +1230,12 @@ namespace ns
         advance(); // 跳过 import 关键字
         if (!match(TokenType::STRING))
         {
-            em_->emit_miss_token_error(current().getLocation(), "[STRING]", get_code_line_string(CURRENT_LOCATION));
+            em_->emit_miss_token_error(current.getLocation(), "[STRING]", get_code_line_string(CURRENT_LOCATION));
             return nullptr;
         }
-        auto stmt = std::make_unique<ImportStatement>(current());
+        auto stmt = std::make_unique<ImportStatement>(current);
         advance(); // 跳过库名
-        if (current().getType() == TokenType::SEMICOLON)
+        if (current.getType() == TokenType::SEMICOLON)
         {
             advance();
         }
@@ -1243,7 +1263,7 @@ namespace ns
             // advance(); // 跳过点运算符
             if (!match(TokenType::IDENT))
             {
-                em_->emit_miss_object_member_error(current().getLocation(), get_code_line_string(CURRENT_LOCATION));
+                em_->emit_miss_object_member_error(current.getLocation(), get_code_line_string(CURRENT_LOCATION));
                 return nullptr;
             }
             auto right = parse_ident_expression(); // 解析右侧标识符
@@ -1271,7 +1291,7 @@ namespace ns
             if (!match(TokenType::RPAREN))
             {
                 // error("缺少右括号 ')'");
-                em_->emit_miss_token_error(current().getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
+                em_->emit_miss_token_error(current.getLocation(), ")", get_code_line_string(CURRENT_LOCATION));
                 return nullptr;
             }
             advance(); // 跳过 ')'
@@ -1299,16 +1319,16 @@ namespace ns
     }
     std::unique_ptr<ReturnStatement> Parser::parse_return_statement()
     {
-        std::unique_ptr<ReturnStatement> retstmt(new ReturnStatement(current()));
+        std::unique_ptr<ReturnStatement> retstmt(new ReturnStatement(current));
         advance();
-        if (current().getType() == TokenType::SEMICOLON)
+        if (current.getType() == TokenType::SEMICOLON)
         {
             advance();
             return retstmt;
         }
         auto e = parse_expression(Priority::LOWEST);
         retstmt->setExpression(e.release());
-        if (current().getType() == TokenType::SEMICOLON)
+        if (current.getType() == TokenType::SEMICOLON)
             advance();
         return retstmt;
     }
@@ -1323,7 +1343,7 @@ namespace ns
         {
             // 对于右结合的赋值运算符，使用 >= 判断
             bool should_continue = false;
-            if (current().getType() == TokenType::ASSIGN)
+            if (current.getType() == TokenType::ASSIGN)
             {
                 should_continue = priority <= get_precedence();
             }
@@ -1332,10 +1352,10 @@ namespace ns
                 should_continue = priority < get_precedence();
             }
 
-            if (!should_continue || current().getType() == TokenType::END)
+            if (!should_continue || current.getType() == TokenType::END)
                 break;
 
-            Token op = current();
+            Token op = current;
             advance();
             left = parse_infix_expression(std::move(left), op);
             //  std::cout<<left->toString()<<std::endl;
@@ -1348,34 +1368,34 @@ namespace ns
 
     std::unique_ptr<Float64Literal> Parser::parse_float_expression()
     {
-        auto ret = std::make_unique<Float64Literal>(current());
+        auto ret = std::make_unique<Float64Literal>(current);
         advance();
         return ret;
     }
 
     std::unique_ptr<I64Literal> Parser::parse_integer_expression()
     {
-        auto ret = std::make_unique<I64Literal>(current());
+        auto ret = std::make_unique<I64Literal>(current);
         advance();
         return ret;
     }
 
     std::unique_ptr<Ident> Parser::parse_ident_expression()
     {
-        auto ret = std::make_unique<Ident>(current());
+        auto ret = std::make_unique<Ident>(current);
         advance();
         return ret;
     }
     std::unique_ptr<StringLiteral> Parser::parse_string_expression()
     {
-        auto ret = std::make_unique<StringLiteral>(current());
+        auto ret = std::make_unique<StringLiteral>(current);
         advance();
         return ret;
     }
 
     std::unique_ptr<BoolLiteral> Parser::parse_bool_expression()
     {
-        auto ret = std::make_unique<BoolLiteral>(current());
+        auto ret = std::make_unique<BoolLiteral>(current);
         advance();
         return ret;
     }
