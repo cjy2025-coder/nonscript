@@ -10,14 +10,18 @@ INCLUDE_DIR := include
 FRONTEND_DIR := $(SRC_DIR)/frontend
 IR_DIR :=$(SRC_DIR)/ir
 UTIL_DIR :=$(SRC_DIR)/util
-VM_DIR :=$(SRC_DIR)/vm
+# VM_DIR :=$(SRC_DIR)/vm
 OUTPUT_DIR := output
 # $(wildcard $(IR_DIR)/*.cpp) \
 # 自动查找源文件和生成依赖
-SRCS := $(wildcard $(SRC_DIR)/*.cpp) \
+SRCS := $(wildcard $(SRC_DIR)/main.cpp) \
+        $(wildcard $(SRC_DIR)/type.cpp) \
         $(wildcard $(FRONTEND_DIR)/*.cpp) \
-		$(wildcard $(UTIL_DIR)/*.cpp) \
- 		$(wildcard $(VM_DIR)/*.cpp)
+        $(wildcard $(UTIL_DIR)/*.cpp) \
+        $(wildcard $(IR_DIR)/*.cpp) \
+	    $(wildcard $(SRC_DIR)/optimization/*.cpp) \
+#         $(wildcard $(SRC_DIR)/backend/*.cpp) \
+
 OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(SRC_DIR)/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)
 

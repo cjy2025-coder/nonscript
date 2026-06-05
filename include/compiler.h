@@ -68,7 +68,7 @@ namespace ns{
         return ss.str();
     }
     // 直接通过 gcc 编译生成在内存中的 cpp 源码
-    bool compile_with_gcc(const std::string& cpp_code, const std::string& output_exe)
+    inline bool compile_with_gcc(const std::string& cpp_code, const std::string& output_exe)
     {
         // 构建 g++ 命令（从 stdin 读取 C++ 代码！）
         std::string cmd = "g++ -x c++ -o \"" + output_exe + "\" -";

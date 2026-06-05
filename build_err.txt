@@ -1,0 +1,2 @@
+D:/Tools/mingw13.0.1/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/13.1.0/../../../../x86_64-w64-mingw32/bin/ld.exe: D:\temp\ccUQp4UO.o:semantic.cpp:(.text+0x216): multiple definition of `ns::compile_with_gcc(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)'; D:\temp\cchphKdf.o:main.cpp:(.text+0x20b): first defined here
+collect2.exe: error: ld returned 1 exit status

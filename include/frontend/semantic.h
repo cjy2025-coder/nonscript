@@ -2,6 +2,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <set>
 #include "./error/error_manager.h"
 #include "ast.h"
 #include "lexer.h"
@@ -99,6 +100,9 @@ namespace ns
     private:
         ErrorManager *em_ = new ErrorManager();
         Lexer *mLexer;
+        std::set<std::string> imported_files; // 已导入的文件（避免循环导入）
+        std::vector<std::unique_ptr<Program>> imported_programs; // 保存导入的AST
+        std::vector<std::string> link_libs; // cimport 链接库列表
         // void merge_symbol_table(SemanticAnalyzer * sa){
         //     st->
         // }
@@ -183,6 +187,7 @@ namespace ns
         TypeInfo *check_expression_statement(ExpressionStatement *expr);
         TypeInfo *check_if_expression(IfExpression *expr);
         TypeInfo *check_while_expression(WhileExpression *expr);
+        TypeInfo *check_until_expression(UntilExpression *expr);
         TypeInfo *check_class_statement(ClassLiteral *stmt);
         TypeInfo *check_new_expression(NewExpression *expr);
         TypeInfo *check_import_statement(ImportStatement * stmt);

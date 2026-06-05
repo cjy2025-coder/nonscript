@@ -1,0 +1,4 @@
+# math.ns
+func f(){
+    print("hello")   
+}

@@ -1,15 +1,17 @@
-# class Person{
-#     protected var name:string
-# }
-class Student{
-    private var score:i8;
+# test.ns
+class Person{
     protected var name:string
-    public func __construct__(){
-
+}
+class Student extends Person{
+    public func say()->void{
+        print("hello, i am ",name,"\n");
     }
-    public func __toString__() -> string{
-        return "Here is object info";
+    public func setName(string name_)->void{
+        name = name_
     }
 }
-var s = new Student()
-print(s)
+var s = new Student
+s.setName("Tom")
+s.say()
+
+

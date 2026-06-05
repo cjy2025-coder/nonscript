@@ -11,7 +11,7 @@ namespace ns
     class Lexer
     {
     private:
-        const std::string &fileName;  // 当前进行词法分析的文件名（包含完整路径）
+        std::string fileName;  // 当前进行词法分析的文件名（包含完整路径）
         const std::string &source; // 当前进行词法分析的源代码
         char32_t ch = 0;
         int current = 0, next = 1;
@@ -20,6 +20,7 @@ namespace ns
 
     public:
         const std::string &getSource() const { return source; }
+        const std::string &getSourceFilename() const { return fileName; }
 
     public:
         Lexer(const std::string &source_, const std::string &fileName_)

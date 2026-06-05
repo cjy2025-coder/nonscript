@@ -573,6 +573,20 @@ namespace ns
         }
     };
 
+    class CImportStatement : public Statement
+    {
+    public:
+        CImportStatement(const Token &t) : Statement(t) {}
+        std::string getLibName()
+        {
+            return getLiteral();
+        }
+        std::string toString() const override
+        {
+            return "cimport \"" + getLiteral() + "\";\n";
+        }
+    };
+
     class BlockStatement : public Statement
     {
     private:

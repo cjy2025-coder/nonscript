@@ -1,17 +1,19 @@
 #include "./frontend/semantic.h"
+#include "./frontend/parser.h"
+#include "compiler.h"
 #include <functional>
+#include <fstream>
 
 namespace ns
 {
     TypeInfo *_errorType = new TypeInfo();
-    // void SemanticAnalyzer::push_symbol(std::string name, Symbol *symbol)
-    // {
-    //     symbol_table[name] = symbol; //?
-    // }
+ 
+    // +, -, *, / , %
     bool SemanticAnalyzer::is_arithmetic_op(std::string op)
     {
         return op == "+" || op == "-" || op == "*" || op == "/" || op == "%";
     }
+    // &&, ||
     bool SemanticAnalyzer::is_logic_op(std::string op)
     {
         return op == "&&" || op == "||";
@@ -59,11 +61,13 @@ namespace ns
     TypeInfo *SemanticAnalyzer::check_ident(Ident *ident)
     {
         auto symbol = find_symbol(ident->getLiteral());
-        if (!symbol) // 没有找到这个标识符
+        if (!symbol)
         {
             raiseError(ErrorType::SEMANTIC_ERROR, "'" + ident->getLiteral() + "' is not defined", ident->getToken().getLocation());
             MARK_ERROR;
         }
+        // 将语义分析得到的类型设置到 AST 节点上
+        ident->setType(symbol->type_info->baseType);
         return symbol->type_info;
     }
     TypeInfo *SemanticAnalyzer::check_prefix_expression(PrefixExpression *expr)
@@ -112,14 +116,11 @@ namespace ns
         const auto &right = expr->getRight();
         auto op = expr->getOperator();
 
-        // ---- 递归查找类成员（包括父类） ----
         auto findMemberInClass = [&](const ClassDetail &detail, const std::string &member_name, auto &&self_ref) -> const MemDetail *
         {
-            // 在当前类中查找
             auto it = detail.mems.find(member_name);
             if (it != detail.mems.end())
                 return &(it->second);
-            // 递归查找父类
             for (auto *parent_ti : detail.parents)
             {
                 Symbol *parent_s = st->find(parent_ti->baseType->alias);
@@ -134,7 +135,6 @@ namespace ns
             return nullptr;
         };
 
-        // ---- 成员访问 . ----
         if (op == ".")
         {
             _type *base_type = left_type->baseType;
@@ -159,7 +159,6 @@ namespace ns
             return found->ti;
         }
 
-        // ---- 右侧表达式 ----
         auto right_type = check_expression(right);
         if (!right_type)
         {
@@ -171,7 +170,6 @@ namespace ns
             MARK_ERROR;
         }
 
-        // ---- 赋值 = ----
         if (op == "=")
         {
             if (left_type->baseType != right_type->baseType &&
@@ -185,7 +183,6 @@ namespace ns
             return typeManager::find(left_type->baseType->alias);
         }
 
-        // ---- 算术运算符 + - * / % ----
         if (is_arithmetic_op(op))
         {
             if (is_number(left_type->baseType) && is_number(right_type->baseType))
@@ -211,7 +208,6 @@ namespace ns
             MARK_ERROR;
         }
 
-        // ---- 逻辑运算符 && || ----
         if (is_logic_op(op))
         {
             if (is_bool(left_type->baseType) && is_bool(right_type->baseType))
@@ -222,123 +218,34 @@ namespace ns
             MARK_ERROR;
         }
 
-        // ---- 其他运算符（==, !=, <, >, <=, >=, <<, >>, &, |, ^ 等） ----
+        if(op == "==" || op == "!="){
+            if(left_type->baseType == right_type->baseType){
+                return typeManager::find("bool");
+            }
+            else if(is_number(left_type->baseType) && is_number(right_type->baseType)){
+                return typeManager::find("bool");
+            }
+            raiseError(ErrorType::SEMANTIC_ERROR,
+                "unsupported operator '" + op + "' between types '" + left_type->baseType->alias + "' and '" + right_type->baseType->alias + "'",
+                right->getToken().getLocation());
+            MARK_ERROR;
+        }
+
+        if(op == ">" || op == ">=" || op == "<" || op == "<="){
+            if(is_number(left_type->baseType) && is_number(right_type->baseType)){
+                return typeManager::find("bool");
+            }
+            raiseError(ErrorType::SEMANTIC_ERROR,
+                "unsupported operator '" + op + "' between types '" + left_type->baseType->alias + "' and '" + right_type->baseType->alias + "'",
+                right->getToken().getLocation());
+            MARK_ERROR;
+        }
+
         raiseError(ErrorType::SEMANTIC_ERROR,
             "unsupported operator '" + op + "' between types '" + left_type->baseType->alias + "' and '" + right_type->baseType->alias + "'",
             right->getToken().getLocation());
         MARK_ERROR;
     }
-// TypeInfo *SemanticAnalyzer::check_infix_expression(InfixExpression *expr)
-//     {
-//         auto left = expr->getLeft();
-//         auto left_type = check_expression(left); // 计算左侧表达式
-//         bool hasError = false;
-//         if (!left_type)
-//         {
-//             raiseError(ErrorType::SEMANTIC_ERROR, "invalid expression: " + expr->getLeft()->toString(), expr->getLeft()->getToken().getLocation());
-//             hasError = true;
-//         }
-//         else if (left_type == _errorType)
-//         {
-//             hasError = true;
-//         }
-//         auto right = expr->getRight();
-//         auto op = expr->getOperator();
-//         if (op == ".") // 优先判断是否在访问类成员
-//         {
-//             auto t = st->find(left_type->baseType->alias);
-//             auto t_ = std::get<ClassDetail>(t->type_info->detail);
-//             auto _ = t_.mems.find(right->getLiteral());
-//             if (_ == t_.mems.end())
-//             {
-//                 raiseError(ErrorType::SEMANTIC_ERROR,
-//                            "unkown member : " + right->getLiteral() + " of class " + left_type->baseType->alias,
-//                            right->getToken().getLocation());
-//                 MARK_ERROR;
-//             }
-//             else if (_->second.level != AccessLevel::Public)
-//             {
-//                 raiseError(ErrorType::SEMANTIC_ERROR,
-//                            "invisiable member : " + right->getLiteral() + " of class " + left_type->baseType->alias,
-//                            right->getToken().getLocation());
-//                 MARK_ERROR;
-//             }
-//             else
-//             {
-//                 return _->second.ti;
-//             }
-//         }
-//         auto right_type = check_expression(right); // 计算右侧表达式
-//         if (!right_type)
-//         {
-//             raiseError(ErrorType::SEMANTIC_ERROR, "invalid expression: " + expr->getRight()->toString(), expr->getRight()->getToken().getLocation());
-//             hasError = true;
-//         }
-//         else if (right_type == _errorType)
-//         {
-//             hasError = true;
-//         }
-//         if (hasError)
-//         {
-//             MARK_ERROR;
-//         }
-//         if (op == "=")
-//         { // 是赋值语句
-//             if (left_type->baseType != right_type->baseType &&
-//                 !(is_number(left_type->baseType) && is_number(right_type->baseType)))
-//             {
-//                 hasError = true;
-//                 raiseError(ErrorType::SEMANTIC_ERROR, "unmatch type for assignment statements: " + expr->toString(), expr->getToken().getLocation());
-//             }
-//             else
-//             {
-//                 return typeManager::find(left_type->baseType->alias);
-//             }
-//         }
-//         else if (is_arithmetic_op(op))
-//         {
-//             if (is_number(left_type->baseType) && is_number(right_type->baseType))
-//             {
-//                 if (op == "%")
-//                 {
-//                     if (is_float(left_type->baseType))
-//                     {
-//                         raiseError(ErrorType::SEMANTIC_ERROR, "Modulo operation requires integer types" + left->getLiteral(), left->getToken().getLocation());
-//                         MARK_ERROR;
-//                     }
-//                     if (is_float(right_type->baseType))
-//                     {
-//                         raiseError(ErrorType::SEMANTIC_ERROR, "Modulo operation requires integer types" + right->getLiteral(), right->getToken().getLocation());
-//                         MARK_ERROR;
-//                     }
-//                 }
-//                 return get_wider_numeric_type(left_type, right_type);
-//             }
-//             else if (op == "+")
-//             { // 处理字符串加法
-//                 if (is_string(left_type->baseType) && is_string(right_type->baseType))
-//                 {
-//                     return typeManager::find("string");
-//                 }
-//                 raiseError(ErrorType::SEMANTIC_ERROR,
-//                            "unsupported operation + between ",
-//                            right->getToken().getLocation());
-//                 MARK_ERROR;
-//             }
-//         }
-//         else if (is_logic_op(op))
-//         {
-//             if (is_bool(left_type->baseType) && is_bool(right_type->baseType))
-//             {
-//                 return left_type;
-//             }
-//         }
-//         // else if(op == "."){
-//         //     if(left_type->baseType == _type::OBJECT)
-//         // }
-//         else
-//             MARK_ERROR;
-//     }
     TypeInfo *SemanticAnalyzer::check_index_expression(IndexExpression *expr)
     {
         auto array = expr->getLeft();
@@ -368,35 +275,21 @@ namespace ns
                        idx->getToken().getLocation());
             MARK_ERROR;
         }
-        // 尝试获取元素的类型，以及检查下标是否越界
-        // 下标是整数常量
         int64_t _ = -1;
         bool static_check = true;
         if (auto *constant_idx = dynamic_cast<I8Literal *>(idx))
-        {
             _ = constant_idx->getValue();
-        }
         else if (auto *constant_idx = dynamic_cast<I16Literal *>(idx))
-        {
             _ = constant_idx->getValue();
-        }
         else if (auto *constant_idx = dynamic_cast<I32Literal *>(idx))
-        {
             _ = constant_idx->getValue();
-        }
         else if (auto *constant_idx = dynamic_cast<I64Literal *>(idx))
-        {
             _ = constant_idx->getValue();
-        }
         else
-        {
             static_check = false;
-        }
-        // 无法静态检查时，临时返回一个类型
         if (!static_check)
             return typeManager::find("undefined");
         ArrayDetail arrayDetail = std::get<ArrayDetail>(type->detail);
-        // 对下标进行静态检查
         if (_ < 0 || _ >= arrayDetail.size)
         {
             raiseError(ErrorType::SEMANTIC_ERROR,
@@ -429,12 +322,10 @@ namespace ns
             elemTypes.emplace_back(elemType);
         }
         if (hasError)
-        {
             MARK_ERROR;
-        }
         ArrayDetail arrayDetail = {};
-        arrayDetail.size = size;             // 数组长度信息
-        arrayDetail.elems_types = elemTypes; // 数组各个元素的类型
+        arrayDetail.size = size;
+        arrayDetail.elems_types = elemTypes;
         typeInfo->detail = arrayDetail;
         return typeInfo;
     }
@@ -455,9 +346,7 @@ namespace ns
                 return typeInfo;
         }
         if (hasError)
-        {
             MARK_ERROR;
-        }
         return typeManager::find("void");
     }
     TypeInfo *SemanticAnalyzer::check_param(std::shared_ptr<FuncParam> param)
@@ -465,16 +354,15 @@ namespace ns
         auto &ident = param->name;
         auto &val = param->init;
         if (!val)
-        { // 形参无默认值
+        {
             TypeInfo *typeInfo = typeManager::find(ident->getType());
-            std::string name = ident->getLiteral();
             Symbol *new_symbol = new Symbol();
-            new_symbol->name = name;
+            new_symbol->name = ident->getLiteral();
             new_symbol->type_info = typeInfo;
-            push_symbol(name, new_symbol);
+            push_symbol(ident->getLiteral(), new_symbol);
             return typeInfo;
         }
-        else // 处理形参有默认值的情况
+        else
         {
             auto val_type_info = check_expression(val.get());
             if (_SEMANTIC_ERROR(val_type_info))
@@ -490,11 +378,10 @@ namespace ns
                     MARK_ERROR;
                 }
             }
-            std::string name = ident->getLiteral();
             Symbol *new_symbol = new Symbol();
-            new_symbol->name = name;
+            new_symbol->name = ident->getLiteral();
             new_symbol->type_info = typeInfo;
-            push_symbol(name, new_symbol);
+            push_symbol(ident->getLiteral(), new_symbol);
             return typeInfo;
         }
     }
@@ -503,10 +390,8 @@ namespace ns
         auto func = expr->getFunc();
         auto typeInfo = check_expression(expr->getFunc());
         if (_SEMANTIC_ERROR(typeInfo))
-        {
             MARK_ERROR;
-        }
-        else if (typeInfo->baseType->alias != "func") // 检查括号左边是否是函数名
+        else if (typeInfo->baseType->alias != "func")
         {
             raiseError(ErrorType::SEMANTIC_ERROR,
                        "expect function " + func->getLiteral(),
@@ -517,15 +402,15 @@ namespace ns
         ns::FuncDetail &func_detail = std::get<ns::FuncDetail>(typeInfo->detail);
         std::vector<std::unique_ptr<Expression>> &args = expr->getArgs();
         if (func_detail.is_unlimited_args_func)
-        { // 不限制形参列表,此时只检查涉及的符号是否定义
+        {
             for (int i = 0; i < args.size(); i++)
             {
                 auto type = check_expression(args[i].get());
                 if (_SEMANTIC_ERROR(type))
-                {
                     MARK_ERROR;
-                }
-                return typeManager::find(func_detail.return_type->alias);
+                TypeInfo *ret_ti = typeManager::find(func_detail.return_type->alias);
+                expr->setType(ret_ti->baseType);
+                return ret_ti;
             }
         }
 
@@ -541,9 +426,7 @@ namespace ns
         {
             auto type = check_expression(args[i].get());
             if (_SEMANTIC_ERROR(type))
-            {
                 MARK_ERROR;
-            }
             else if (type->baseType != arg_types[i])
             {
                 raiseError(ErrorType::SEMANTIC_ERROR,
@@ -552,7 +435,10 @@ namespace ns
                 MARK_ERROR;
             }
         }
-        return typeManager::find(func_detail.return_type->alias);
+
+        TypeInfo *ret_ti = typeManager::find(func_detail.return_type->alias);
+        expr->setType(ret_ti->baseType);
+        return ret_ti;
     }
     TypeInfo *SemanticAnalyzer::check_func_statement(FuncDecl *stmt)
     {
@@ -567,7 +453,7 @@ namespace ns
         }
         auto params = stmt->getParams();
         bool hasError = false;
-        enter_scope(); // 进入函数的局部变量作用域
+        enter_scope();
         FuncDetail funcDetail = {};
         for (auto &param : params)
         {
@@ -578,25 +464,20 @@ namespace ns
                 continue;
             }
             funcDetail.param_types.push_back(info->baseType);
-            // 将形参名写入符号表
             Symbol *new_symbol = new Symbol();
             new_symbol->name = param->name->getLiteral();
             new_symbol->type_info = info;
             push_symbol(param->name->getLiteral(), new_symbol);
         }
-        if (!stmt->check_if_extern_func()) // 不是外部的 extern 函数
+        if (!stmt->check_if_extern_func())
         {
             auto body = stmt->getBody();
             auto t = check_block_statement(body);
             if (_SEMANTIC_ERROR(t))
-            {
                 hasError = true;
-            }
-            else if (stmt->ret_type && t->baseType->id != stmt->ret_type->id) // 声明的返回值类型和实际返回的不一致
+            else if (stmt->ret_type && t->baseType->id != stmt->ret_type->id)
             {
-                if (is_number(stmt->ret_type) && is_number(t->baseType)) // 都是数字，尝试强制转换
-                {
-                }
+                if (is_number(stmt->ret_type) && is_number(t->baseType)) {}
                 else
                 {
                     raiseError(ErrorType::SEMANTIC_ERROR,
@@ -605,22 +486,14 @@ namespace ns
                     hasError = true;
                 }
             }
-
             if (hasError)
-            {
                 MARK_ERROR;
-            }
             if (!stmt->ret_type)
-            {
                 stmt->ret_type = t->baseType;
-            }
         }
-
         funcDetail.return_type = stmt->ret_type;
         typeInfo->detail = funcDetail;
-        exit_scope(); // 离开局部变量作用域
-
-        // 将函数名写入符号表
+        exit_scope();
         Symbol *new_symbol = new Symbol();
         new_symbol->name = name;
         new_symbol->type_info = typeInfo;
@@ -632,7 +505,7 @@ namespace ns
         TypeInfo *typeInfo = typeManager::find("func");
         auto params = expr->getParams();
         bool hasError = false;
-        enter_scope(); // 进入函数的局部变量作用域
+        enter_scope();
         FuncDetail funcDetail = {};
         for (auto &param : params)
         {
@@ -647,9 +520,7 @@ namespace ns
         auto body = expr->getBody();
         auto t = check_block_statement(body);
         if (_SEMANTIC_ERROR(t))
-        {
             hasError = true;
-        }
         else if (expr->ret_type && t->baseType->id != expr->ret_type->id)
         {
             raiseError(ErrorType::SEMANTIC_ERROR,
@@ -658,16 +529,12 @@ namespace ns
             hasError = true;
         }
         if (hasError)
-        {
             MARK_ERROR;
-        }
         if (!expr->ret_type)
-        {
             expr->ret_type = t->baseType;
-        }
         funcDetail.return_type = t->baseType;
         typeInfo->detail = funcDetail;
-        exit_scope(); // 离开局部变量作用域
+        exit_scope();
         return typeInfo;
     }
     TypeInfo *SemanticAnalyzer::check_if_expression(IfExpression *expr)
@@ -675,26 +542,18 @@ namespace ns
         auto condition = expr->getCondition();
         bool hasError = false;
         if (_SEMANTIC_ERROR(check_expression(condition)))
-        {
             hasError = true;
-        }
         auto consequence = expr->getConsequence();
         if (_SEMANTIC_ERROR(check_statement(consequence)))
-        {
             hasError = true;
-        }
         auto alternative = expr->getAlternative();
         if (alternative != NULL)
         {
             if (_SEMANTIC_ERROR(check_statement(alternative)))
-            {
                 hasError = true;
-            }
         }
         if (hasError)
-        {
             MARK_ERROR;
-        }
         return typeManager::find("void");
     }
     TypeInfo *SemanticAnalyzer::check_while_expression(WhileExpression *expr)
@@ -702,18 +561,25 @@ namespace ns
         auto condition = expr->getCondition();
         bool hasError = false;
         if (_SEMANTIC_ERROR(check_expression(condition)))
-        {
             hasError = true;
-        }
         auto body = expr->getBody();
         if (_SEMANTIC_ERROR(check_statement(body)))
-        {
             hasError = true;
-        }
         if (hasError)
-        {
             MARK_ERROR;
-        }
+        return typeManager::find("void");
+    }
+    TypeInfo *SemanticAnalyzer::check_until_expression(UntilExpression *expr)
+    {
+        auto condition = expr->getCondition();
+        bool hasError = false;
+        if (_SEMANTIC_ERROR(check_expression(condition)))
+            hasError = true;
+        auto body = expr->getBody();
+        if (_SEMANTIC_ERROR(check_statement(body)))
+            hasError = true;
+        if (hasError)
+            MARK_ERROR;
         return typeManager::find("void");
     }
     TypeInfo *SemanticAnalyzer::check_expression(Expression *expr)
@@ -751,21 +617,16 @@ namespace ns
         else if (typeid(*expr) == typeid(IndexExpression))
             return check_index_expression((IndexExpression *)expr);
         else if (typeid(*expr) == typeid(CallExpression))
-        {
             return check_call_expression((CallExpression *)expr);
-        }
         else if (typeid(*expr) == typeid(IfExpression))
-        {
             return check_if_expression((IfExpression *)expr);
-        }
         else if (typeid(*expr) == typeid(WhileExpression))
-        {
             return check_while_expression((WhileExpression *)expr);
+        else if (auto * e = dynamic_cast<UntilExpression*>(expr)){
+            return check_until_expression(e);
         }
         else if (typeid(*expr) == typeid(NewExpression))
-        {
             return check_new_expression((NewExpression *)(expr));
-        }
         else
             MARK_ERROR;
     }
@@ -773,10 +634,9 @@ namespace ns
     {
         auto temp = expr->getRight();
         if (auto *_ = dynamic_cast<Ident *>(temp))
-        { // 直接调用默认构造函数
+        {
             auto type = _->getLiteral();
-            auto _type = typeManager::find(type);
-            if (!_type)
+            if (!typeManager::find(type))
             {
                 raiseError(ErrorType::SEMANTIC_ERROR,
                            "Unkown class: " + type,
@@ -788,8 +648,7 @@ namespace ns
         else if (auto *_ = dynamic_cast<CallExpression *>(temp))
         {
             auto type = _->getFunc()->getLiteral();
-            auto _type = typeManager::find(type);
-            if (!_type)
+            if (!typeManager::find(type))
             {
                 raiseError(ErrorType::SEMANTIC_ERROR,
                            "Unkown class: " + type,
@@ -808,7 +667,6 @@ namespace ns
     }
     TypeInfo *SemanticAnalyzer::check_class_statement(ClassLiteral *stmt)
     {
-        // 类名
         auto name = stmt->getLiteral();
         if (find_symbol(name))
         {
@@ -825,25 +683,18 @@ namespace ns
             const auto &check_result = check_ident(parent.get());
             clsd.parents.push_back(check_result);
             if (_SEMANTIC_ERROR(check_result))
-            {
                 hasError = true;
-            }
         }
         auto &members = stmt->getMembers();
 
-        // 递归将父类所有可见成员加入符号表
         std::function<void(const std::string &)> importParentMems = [&](const std::string &parent_name)
         {
             Symbol *parent_s = st->find(parent_name);
             if (!parent_s || !std::holds_alternative<ClassDetail>(parent_s->type_info->detail))
                 return;
             const auto &parent_detail = std::get<ClassDetail>(parent_s->type_info->detail);
-            // 先递归导入父类的父类
             for (auto *grandparent_ti : parent_detail.parents)
-            {
                 importParentMems(grandparent_ti->baseType->alias);
-            }
-            // 导入父类成员（不覆盖已定义的）
             for (const auto &[mem_name, mem] : parent_detail.mems)
             {
                 if (mem.level != AccessLevel::Private && !find_symbol(mem_name))
@@ -857,11 +708,8 @@ namespace ns
         };
 
         enter_scope();
-        // 先导入父类成员（让子类可以覆盖）
         for (auto &parent : parents)
-        {
             importParentMems(parent->getLiteral());
-        }
         for (auto &member : members)
         {
             auto stmt = member.declaration.get();
@@ -870,48 +718,37 @@ namespace ns
                 const auto &vars = _stmt->getVars();
                 for (const auto &var : vars)
                 {
-                    auto name_ = var.first->getLiteral(); // 获取标识符名称
+                    auto name_ = var.first->getLiteral();
                     if (find_symbol(name_))
-                    { // 变量已经被申明了
+                    {
                         raiseError(ErrorType::SEMANTIC_ERROR, "redefined symbol: " + name_, var.first->getToken().getLocation());
                         hasError = true;
                         continue;
                     }
-                    auto type = var.first->getType(); // 获取标识符类型
+                    auto type = var.first->getType();
                     auto expr = var.second;
                     TypeInfo *right_type = nullptr;
-                    if (expr) // 有赋值则分析赋值表达式
+                    if (expr)
                     {
                         right_type = check_expression(expr);
                         if (right_type == _errorType)
-                            hasError = true; // 解析赋值表达式出错
+                            hasError = true;
                         else if (type_to_string(right_type->baseType) != type)
                         {
                             if (type == "")
-                            { // 变量类型未显式定义，自动推导，然后固定
                                 var.first->setType(right_type->baseType);
-                            }
-                            // 都是数字，可以尝试强制转化
-                            else if (is_number(right_type->baseType) && is_number(string_to_type(type)))
-                            {
-                            }
-                            // 类型不匹配,但是也无法数字兼容
+                            else if (is_number(right_type->baseType) && is_number(string_to_type(type))) {}
                             else
                             {
-                                auto t = var.second->getToken();
                                 raiseError(ErrorType::SEMANTIC_ERROR, "unmatch type: " + type, var.second->getToken().getLocation());
                                 hasError = true;
                             }
                         }
                     }
                     else if (type != "")
-                    {
                         right_type = typeManager::find(type);
-                    }
                     else
-                    {
                         right_type = typeManager::find("undefined");
-                    }
                     Symbol *new_symbol = new Symbol();
                     new_symbol->name = name_;
                     new_symbol->type_info = right_type;
@@ -929,13 +766,11 @@ namespace ns
                 std::string name_ = _stmt->getLiteral();
                 if (find_symbol(name_))
                 {
-                    raiseError(ErrorType::SEMANTIC_ERROR,
-                               "redefine function: " + name_,
-                               _stmt->getToken().getLocation());
+                    raiseError(ErrorType::SEMANTIC_ERROR, "redefine function: " + name_, _stmt->getToken().getLocation());
                     MARK_ERROR;
                 }
                 auto params = _stmt->getParams();
-                enter_scope(); // 进入函数的局部变量作用域
+                enter_scope();
                 FuncDetail funcDetail = {};
                 for (auto &param : params)
                 {
@@ -946,7 +781,6 @@ namespace ns
                         continue;
                     }
                     funcDetail.param_types.push_back(info->baseType);
-                    // 将形参名写入符号表
                     Symbol *new_symbol = new Symbol();
                     new_symbol->name = param->name->getLiteral();
                     new_symbol->type_info = info;
@@ -955,9 +789,7 @@ namespace ns
                 auto body = _stmt->getBody();
                 auto t = check_block_statement(body);
                 if (_SEMANTIC_ERROR(t))
-                {
                     hasError = true;
-                }
                 else if (_stmt->ret_type && t->baseType->id != _stmt->ret_type->id)
                 {
                     raiseError(ErrorType::SEMANTIC_ERROR,
@@ -966,18 +798,12 @@ namespace ns
                     hasError = true;
                 }
                 if (hasError)
-                {
                     continue;
-                }
                 if (!_stmt->ret_type)
-                {
                     _stmt->ret_type = t->baseType;
-                }
                 funcDetail.return_type = t->baseType;
                 typeInfo->detail = funcDetail;
-                exit_scope(); // 离开局部变量作用域
-
-                // 将函数名写入符号表
+                exit_scope();
                 Symbol *new_symbol = new Symbol();
                 new_symbol->name = name_;
                 new_symbol->type_info = typeInfo;
@@ -988,23 +814,12 @@ namespace ns
                 md.ti = new_symbol->type_info;
                 clsd.mems[name_] = md;
             }
-            // auto _ = check_statement(member.declaration.get());
-            // if (_SEMANTIC_ERROR(_))
-            // {
-            //     hasError = true;
-            // }
-            // else
-            // {
-            // }
         }
         exit_scope();
         if (hasError)
-        {
             MARK_ERROR;
-        }
         auto ret = typeManager::find(name);
         ret->detail = clsd;
-        // 将类名写入符号表
         Symbol *new_symbol = new Symbol();
         new_symbol->name = name;
         new_symbol->type_info = ret;
@@ -1018,44 +833,102 @@ namespace ns
     }
     TypeInfo *SemanticAnalyzer::check_expression_statement(ExpressionStatement *expr)
     {
-        const auto & exp = expr->expression();
+        const auto &exp = expr->expression();
         return check_expression(exp);
     }
     TypeInfo *SemanticAnalyzer::check_import_statement(ImportStatement *stmt)
     {
-        // undo
-        // 在退出库文件的解析后，它的SymbolManager一定只有一层，
-        // 此时可以把它所有的符号写入当前语法分析器的SymbolManager的最顶层作用域
-        // 对所有包含的库文件做上述操作,即：
-        // import "a.ss"
-        // import "b.ss"
-        // a.ss,b.ss的符号将一起写入当前语法分析器的SymbolManager的最顶层作用域
-        // 而不是 a.ss -> b.ss -> 当前源文件 的作用域结构
-        
-        // const std::string & path = stmt->getPath();
-        // auto absolute_path = ns::get_absolute_path(path).string();
-        // std::string source = read_file(absolute_path);
-        // ns::Lexer lexer(source, absolute_path);
-        // std::vector<ns::Token> tokens;
-        // ns::Token token;
-        // while ((token = lexer.scan()).getType() != ns::TokenType::END) {
-        //     tokens.push_back(token);
-        // }
-        // tokens.push_back(token);
-        // // 语法分析
-        // ns::Parser parser(tokens);
-        // parser.setLexer(&lexer);
-        // auto program = parser.parse();
-        // if (!program){
-        //     ns::error(parser.what()->whats());
-        //     MARK_ERROR;
-        // }
-        // // 语义分析
-        // ns::SemanticAnalyzer sa(&lexer);
-        // if (!sa.check(program.get())) {
-        //     ns::error(sa.what()->whats());
-        //     MARK_ERROR;
-        // }
+        std::string abs_path;
+        std::vector<std::string> search_paths;
+        {
+            std::string src_file = mLexer->getSourceFilename();
+            size_t sep = src_file.find_last_of("/\\");
+            std::string source_dir;
+            if (sep != std::string::npos)
+                source_dir = src_file.substr(0, sep);
+            if (!source_dir.empty())
+                search_paths.push_back(source_dir + "/" + stmt->getPath());
+        }
+        search_paths.push_back(stmt->getPath());
+        for (const auto &sp : search_paths)
+        {
+            std::ifstream f(sp.c_str());
+            if (f.good())
+            {
+                abs_path = sp;
+                break;
+            }
+        }
+        if (abs_path.empty())
+        {
+            raiseError(ErrorType::SEMANTIC_ERROR,
+                       "cannot find imported file: '" + stmt->getPath() + "'",
+                       stmt->getToken().getLocation());
+            MARK_ERROR;
+        }
+        if (imported_files.count(abs_path))
+            return typeManager::find("void");
+        std::string source = read_file(abs_path);
+        if (source.empty())
+        {
+            raiseError(ErrorType::SEMANTIC_ERROR,
+                       "cannot read imported file: '" + abs_path + "'",
+                       stmt->getToken().getLocation());
+            MARK_ERROR;
+        }
+        imported_files.insert(abs_path);
+        Lexer import_lexer(source, abs_path);
+        Parser import_parser(&import_lexer);
+        auto imported_program = import_parser.parse();
+        if (!imported_program)
+        {
+            raiseError(ErrorType::SEMANTIC_ERROR,
+                       "syntax error in imported file: '" + abs_path + "'",
+                       stmt->getToken().getLocation());
+            MARK_ERROR;
+        }
+        imported_programs.push_back(std::move(imported_program));
+        Program *saved_program = imported_programs.back().get();
+        SemanticAnalyzer import_sa(&import_lexer);
+        import_sa.imported_files = imported_files;
+        auto import_check = import_sa.collect_and_check_all_import_statement(saved_program);
+        if (_SEMANTIC_ERROR(import_check))
+        {
+            raiseError(ErrorType::SEMANTIC_ERROR,
+                       "error in imported file: '" + abs_path + "'",
+                       stmt->getToken().getLocation());
+            MARK_ERROR;
+        }
+        import_sa.enter_scope();
+        import_sa.init_builtin_funcs();
+        for (auto &s : saved_program->stmts)
+        {
+            if (auto *ims = dynamic_cast<ImportStatement *>(s))
+                continue;
+            auto t = import_sa.check_statement(s);
+            if (_SEMANTIC_ERROR(t))
+            {
+                raiseError(ErrorType::SEMANTIC_ERROR,
+                           "semantic error in imported file: '" + abs_path + "'",
+                           stmt->getToken().getLocation());
+                MARK_ERROR;
+            }
+        }
+        if (import_sa.st->current_)
+        {
+            for (auto &[sym_name, sym] : import_sa.st->current_->symbols_)
+            {
+                if (!find_symbol(sym_name))
+                {
+                    Symbol *new_sym = new Symbol();
+                    new_sym->name = sym_name;
+                    new_sym->type_info = sym->type_info;
+                    push_symbol(sym_name, new_sym);
+                }
+            }
+        }
+        import_sa.exit_scope();
+        imported_files = import_sa.imported_files;
         return typeManager::find("void");
     }
     TypeInfo *SemanticAnalyzer::collect_and_check_all_import_statement(Program *program)
@@ -1063,14 +936,11 @@ namespace ns
         auto &stmts = program->stmts;
         for (auto &stmt : stmts)
         {
-            // 是import语句，则进行检查
             if (auto *ims = dynamic_cast<ImportStatement *>(stmt))
             {
                 const TypeInfo *const cr = check_import_statement(ims);
                 if (_SEMANTIC_ERROR(cr))
-                {
                     MARK_ERROR;
-                }
             }
         }
         return typeManager::find("void");
@@ -1078,33 +948,19 @@ namespace ns
     TypeInfo *SemanticAnalyzer::check_statement(Statement *stmt)
     {
         if (typeid(*stmt) == typeid(DeclareStatement))
-        {
             return check_declare_statement((DeclareStatement *)stmt);
-        }
         else if (typeid(*stmt) == typeid(BlockStatement))
-        {
             return check_block_statement((BlockStatement *)stmt);
-        }
         else if (typeid(*stmt) == typeid(ReturnStatement))
-        {
             return check_return_statement((ReturnStatement *)stmt);
-        }
         else if (typeid(*stmt) == typeid(FuncDecl))
-        {
             return check_func_statement((FuncDecl *)stmt);
-        }
         else if (typeid(*stmt) == typeid(ClassLiteral))
-        {
             return check_class_statement((ClassLiteral *)stmt);
-        }
         else if (typeid(*stmt) == typeid(ExpressionStatement))
-        {
             return check_expression_statement((ExpressionStatement *)stmt);
-        }
         else if (auto *st = dynamic_cast<ForLoop *>(stmt))
-        {
             return check_for_loop_statement(st);
-        }
         else
         {
             raiseError(ErrorType::SEMANTIC_ERROR, "unsupport statement: " + stmt->toString(), stmt->getToken().getLocation());
@@ -1117,27 +973,21 @@ namespace ns
         const auto &condtion = stmt->getCondtion();
         const auto &actions = stmt->getActions();
         const auto &body = stmt->getBody();
-        enter_scope(); // 进入 for-loop 局部作用域
+        enter_scope();
         for (auto &var : vars)
         {
             auto &id = var->var;
             auto &val = var->value;
-
-            // 没有初始化
             if (!val)
             {
                 if (var->external_variable)
                 {
                     auto evt = check_ident(id.get());
-                    // 符号不存在
                     if (_SEMANTIC_ERROR(evt))
-                    {
                         MARK_ERROR;
-                    }
                 }
                 else
                 {
-                    // 把 id 信息加入符号表
                     Symbol *new_symbol = new Symbol();
                     new_symbol->name = id->getLiteral();
                     new_symbol->type_info = typeManager::find("undefined");
@@ -1146,26 +996,15 @@ namespace ns
                 continue;
             }
             auto vt = check_expression(val.get());
-
             if (_SEMANTIC_ERROR(vt))
-            {
                 MARK_ERROR;
-            }
-
-            // 是捕获的外部变量，直接检查类型，不用写入符号表
             if (var->external_variable)
             {
                 auto evt = check_ident(id.get());
-                // 符号不存在
                 if (_SEMANTIC_ERROR(evt))
-                {
-
                     MARK_ERROR;
-                }
-                // 类型不匹配
                 else if (evt != vt)
                 {
-
                     if (!(is_number(evt->baseType) && is_number(vt->baseType)))
                     {
                         raiseError(ErrorType::SEMANTIC_ERROR,
@@ -1178,11 +1017,8 @@ namespace ns
             else
             {
                 auto id_type = id->getType();
-                // 没有显式申明类型
                 if (id_type == "")
-                {
                     id->setType(vt->baseType);
-                }
                 else if (id_type != vt->baseType->alias)
                 {
                     if (!(is_number(string_to_type(id_type)) && is_number(vt->baseType)))
@@ -1193,46 +1029,54 @@ namespace ns
                         MARK_ERROR;
                     }
                 }
-                // 把 id 信息加入符号表
                 Symbol *new_symbol = new Symbol();
                 new_symbol->name = id->getLiteral();
                 new_symbol->type_info = typeManager::find(id->getType());
                 push_symbol(id->getLiteral(), new_symbol);
             }
         }
-        auto cr = check_expression(condtion);
-        if(_SEMANTIC_ERROR(cr)){
-            MARK_ERROR;
-        }
-        for(auto & action : actions){
-            auto ar = check_expression(action.get());
-            if(_SEMANTIC_ERROR(ar)){
+        if (condtion)
+        {
+            auto cr = check_expression(condtion);
+            if (_SEMANTIC_ERROR(cr))
                 MARK_ERROR;
-            }
+        }
+        for (auto &action : actions)
+        {
+            auto ar = check_expression(action.get());
+            if (_SEMANTIC_ERROR(ar))
+                MARK_ERROR;
         }
         auto br = check_block_statement(body);
-        if(_SEMANTIC_ERROR(br)){
+        if (_SEMANTIC_ERROR(br))
             MARK_ERROR;
-        }
-        exit_scope(); // 离开 for-loop 局部作用域
+        exit_scope();
         return typeManager::find("void");
     }
     int SemanticAnalyzer::check(Program *program)
     {
         auto stmts = program->stmts;
         enter_scope();
-        init_builtin_funcs(); // 载入内置函数，内置函数的作用域最高
-        // const TypeInfo * const check_result = collect_and_check_all_import_statement(program);
-        // if(_SEMANTIC_ERROR(check_result)){
-        //     return 0;
-        // }
+        init_builtin_funcs();
+
+        const TypeInfo *const import_check = collect_and_check_all_import_statement(program);
+        if (_SEMANTIC_ERROR(import_check))
+            return 0;
+
+        for (auto &imported : imported_programs)
+        {
+            for (auto &s : imported->stmts)
+            {
+                if (dynamic_cast<ImportStatement *>(s))
+                    continue;
+                program->append(s);
+            }
+        }
+
         for (auto &stmt : stmts)
         {
-            // 是import语句， 不再处理， 因为已经处理过了
             if (auto *ims = dynamic_cast<ImportStatement *>(stmt))
-            {
                 continue;
-            }
             auto _ = check_statement(stmt);
             if (_SEMANTIC_ERROR(_))
                 return 0;
@@ -1246,45 +1090,26 @@ namespace ns
         bool hasError = false;
         for (auto it = vars.begin(); it != vars.end(); it++)
         {
-            // 获取标识符名称
             auto name = it->first->getLiteral();
-            // 变量已经被申明了
             if (find_symbol(name))
             {
                 raiseError(ErrorType::SEMANTIC_ERROR, "redefined symbol: " + name, it->first->getToken().getLocation());
                 hasError = true;
             }
-
-            // 获取标识符声明的类型
             auto type = it->first->getType();
-            // 符号的初始化表达式（如果有的话）
             auto expr = it->second;
             TypeInfo *right_type = nullptr;
-
-            // 有赋值，分析赋值表达式，检查类型是否匹配，可能时进行强制转换
             if (expr)
             {
-                // 尝试获取右侧表达式的类型
                 right_type = check_expression(expr);
-                // 解析赋值表达式出错
                 if (right_type == _errorType)
                     hasError = true;
                 else if (type_to_string(right_type->baseType) != type)
                 {
-                    // 变量类型未显式定义，自动推导，然后固定
-                    if (type == "")
-                    {
-                    }
-                    // 都是数字，可以尝试强制转化
-                    else if (is_number(right_type->baseType) && is_number(string_to_type(type)))
-                    {
-                        // std::string vt = right_type->baseType->alias;
-                        // if()
-                    }
-                    // 类型不匹配,但是也无法数字兼容
+                    if (type == "") {}
+                    else if (is_number(right_type->baseType) && is_number(string_to_type(type))) {}
                     else
                     {
-                        auto t = it->second->getToken();
                         raiseError(ErrorType::SEMANTIC_ERROR,
                                    "can't convert type '" + right_type->baseType->alias + "' to type '" + type + "'",
                                    it->second->getToken().getLocation());
@@ -1292,16 +1117,10 @@ namespace ns
                     }
                 }
             }
-            // 没初始化，但显式声明了类型
             else if (type != "")
-            {
                 right_type = typeManager::find(type);
-            }
-            // 没显式声明类型，也没进行初始化，此时无法获取符号类型
             else
-            {
                 right_type = typeManager::find("undefined");
-            }
             Symbol *new_symbol = new Symbol();
             new_symbol->name = name;
             new_symbol->type_info = right_type;
@@ -1309,9 +1128,7 @@ namespace ns
             push_symbol(name, new_symbol);
         }
         if (hasError)
-        {
             MARK_ERROR;
-        }
         return typeManager::find("void");
     }
 }

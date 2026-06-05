@@ -10,6 +10,7 @@ namespace ns{
         VAR,       ///< var 关键字
         CONST,     ///< const 关键字
         IMPORT,    ///< import 关键字
+        CIMPORT,   ///< cimport 关键字
         FUNC,      ///< func 关键字
         CLASS,     ///< class 关键字
         RETURN,    ///< return 关键字
@@ -116,14 +117,15 @@ namespace ns{
         {"do", TokenType::DO},{"until", TokenType::UNTIL},{"while", TokenType::WHILE},{"for", TokenType::FOR},
         {"false", TokenType::FALSE},{"true", TokenType::TRUE},{"null", TokenType::NONE},{"pi", TokenType::PI},
         {"package", TokenType::PACKAGE},{"static", TokenType::STATIC},{"final",TokenType::FINALLY},{"finally",TokenType::FINALLY},
-        {"extern",TokenType::EXTERN},{"override",TokenType::OVERRIDE},{"this",TokenType::THIS},{"typeid",TokenType::TYPEID}};
+        {"extern",TokenType::EXTERN},{"override",TokenType::OVERRIDE},{"this",TokenType::THIS},{"typeid",TokenType::TYPEID},
+        {"cimport",TokenType::CIMPORT}};
     // Token 类型到其名字的映射表
     inline const std::unordered_map<TokenType, std::string> names = {
         {TokenType::DEFAULT,"default"},{TokenType::THROW,"throw"},{TokenType::Scientific, "SCIENTIFIC"},{TokenType::Hexadecimal, "HEXADECIMAL"},
         {TokenType::Binary, "BINARY"},{TokenType::SWITCH, "switch"},{TokenType::CASE, "case"},{TokenType::TRY, "try"},
         {TokenType::CATCH, "catch"},{TokenType::DEBUGGER, "debugger"},{TokenType::BIT_AND, "&"},{TokenType::BIT_OR, "|"},
         {TokenType::ANNOTATION, "ANNOTATION"},{TokenType::PACKAGE, "package"},{TokenType::VAR, "var"},{TokenType::CONST, "const"},
-        {TokenType::IMPORT, "import"},{TokenType::FUNC, "func"},{TokenType::RETURN, "return"},{TokenType::CLASS, "class"},
+        {TokenType::IMPORT, "import"},{TokenType::CIMPORT, "cimport"},{TokenType::FUNC, "func"},{TokenType::RETURN, "return"},{TokenType::CLASS, "class"},
         {TokenType::PUBLIC, "public"},{TokenType::PRIVATE, "private"},{TokenType::PROTECTED, "protected"},{TokenType::EXTENDS, "extends"},
         {TokenType::OPERATOR, "operator"},{TokenType::NEW, "new"},{TokenType::BREAK, "break"},{TokenType::CONTINUE, "continue"},
         {TokenType::IF, "if"},{TokenType::ELSE, "else"},{TokenType::DO, "do"},{TokenType::UNTIL, "until"},
