@@ -1,0 +1,9 @@
+var a = "hello"
+switch(a){
+    case 1:{
+        print(1)
+    }
+    default:{
+        print("!1")
+    }
+}

@@ -379,7 +379,7 @@ namespace ns
         return params;
     }
 
-    std::unique_ptr<FuncDecl> Parser::parse_func_statement(bool is_extern_func)
+    std::unique_ptr<FuncDecl> Parser::parse_func_statement(bool is_extern_func,bool is_member_func)
     {
         advance(); // 跳过func关键字
         if (!match(TokenType::IDENT))
@@ -404,6 +404,11 @@ namespace ns
         func->setParams(params);
         if (match(TokenType::ARROW))
         {
+            // 是类成员函数， 但是是构造函数，不允许声明返回值
+            if(func_name == "__constructor__" && is_member_func){
+                em_->emit_class_constructor_error(current.getLocation(), get_code_line_string(CURRENT_LOCATION));
+                return nullptr;
+            }
             advance(); // 跳过 ->
             if (!match(TokenType::IDENT))
             {
@@ -587,7 +592,7 @@ namespace ns
                 }*/
                 if (current.getType() == TokenType::FUNC)
                 { // 遇到函数申明
-                    auto stmt = parse_statement();
+                    auto stmt = parse_func_statement(false,true);
                     if (stmt == nullptr)
                     {
                         return nullptr;
@@ -595,7 +600,7 @@ namespace ns
                     c->addMember(AccessLevel::Private, MemberType::Method, std::move(stmt));
                 }
                 else if (match(TokenType::VAR) || match(TokenType::CONST))
-                { // 遇到变量申明
+                { // 遇到变量 / 常量申明
                     auto stmt = parse_statement();
                     if (stmt == nullptr)
                     {
@@ -612,18 +617,14 @@ namespace ns
             else if (current.getType() == TokenType::PUBLIC)
             { // 遇到public关键字
                 advance();
-                /*if (token.getType() == TokenType::STATIC)
-                {
-                    advance();
-                    isStatic = true;
-                }*/
                 if (current.getType() == TokenType::FUNC)
                 { // 遇到函数申明
-                    auto stmt = parse_statement();
+                    auto stmt = parse_func_statement(false,true);
                     if (stmt == nullptr)
                     {
                         return nullptr;
                     }
+                    // __constructor__ 和 __clone__ 和 __toString 作为普通方法处理  
                     c->addMember(AccessLevel::Public, MemberType::Method, std::move(stmt));
                 }
                 else if (current.getType() == TokenType::VAR)
@@ -651,12 +652,30 @@ namespace ns
                 }*/
                 if (current.getType() == TokenType::FUNC)
                 { // 遇到函数申明
-                    auto stmt = parse_statement();
+                    auto stmt = parse_func_statement(false,true);
                     if (stmt == nullptr)
                     {
                         return nullptr;
                     }
-                    c->addMember(AccessLevel::Protected, MemberType::Method, std::move(stmt));
+                    // 检查是否为构造函数（protected构造函数）
+                    if (stmt->getLiteral() == "__constructor__") {
+                        std::vector<std::string> ctor_params;
+                        for (auto &p : stmt->getParams()) {
+                            ctor_params.push_back(p->name->getType());
+                        }
+                        auto body = stmt->getBody();
+                        if (body) {
+                            auto new_body = std::make_unique<BlockStatement>();
+                            for (auto &s : body->value()) {
+                                new_body->append(s);
+                            }
+                            c->addConstructor(AccessLevel::Protected, ctor_params, std::move(new_body));
+                        } else {
+                            c->addConstructor(AccessLevel::Protected, ctor_params, std::make_unique<BlockStatement>());
+                        }
+                    } else {
+                        c->addMember(AccessLevel::Protected, MemberType::Method, std::move(stmt));
+                    }
                 }
                 else if (current.getType() == TokenType::VAR)
                 { // 遇到变量申明
@@ -682,7 +701,7 @@ namespace ns
                 }*/
                 if (current.getType() == TokenType::FUNC)
                 { // 遇到函数申明
-                    auto stmt = parse_statement();
+                    auto stmt = parse_func_statement(false,true);
                     if (stmt == nullptr)
                     {
                         return nullptr;

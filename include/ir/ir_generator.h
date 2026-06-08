@@ -7,6 +7,29 @@
 
 namespace ns
 {
+    // Name Mangling: 将函数名和参数类型编码为唯一的IR符号名
+    inline std::string mangle_name(const std::string &func_name, const std::vector<_type *> &param_types)
+    {
+        if (param_types.empty()) {
+            return func_name + "_void";
+        }
+        std::string mangled = func_name;
+        for (auto *pt : param_types) {
+            mangled += "_" + pt->alias;
+        }
+        return mangled;
+    }
+
+    // 从FuncDecl获取参数类型列表
+    inline std::vector<_type *> get_param_types_from_func(FuncDecl *func)
+    {
+        std::vector<_type *> types;
+        for (auto &p : func->getParams()) {
+            types.push_back(typeManager::find(p->name->getType())->baseType);
+        }
+        return types;
+    }
+
     class IrGenerator
     {
     private:

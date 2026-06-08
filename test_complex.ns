@@ -1,5 +1,61 @@
-class A{
-    private var n =10
+# test_complex.ns - 测试构造函数重载、继承、访问控制
+
+class Person {
+    protected var name:string
+    protected var age:i64
+    
+    # 无参构造函数
+    public func __constructor__(){
+        name = "unknown"
+        age = 0
+    }
+    
+    # 带参构造函数（重载）
+    public func __constructor__(string name_, i64 age_){
+        name = name_
+        age = age_
+    }
+    
+    # private构造函数（外部new不可访问）
+    private func __constructor__(string name_){
+        name = name_
+        age = -1
+    }
+    
+    public func say()->void{
+        print("Person: ", name, ", age: ", age, "\n")
+    }
 }
 
-var a = new A
+class Student extends Person {
+    private var school:string
+    
+    public func __constructor__(string name_, i64 age_, string school_){
+        # 调用父类构造函数（通过本类的方法调用）
+        name = name_
+        age = age_
+        school = school_
+    }
+    
+    public func say()->void{
+        print("Student: ", name, ", age: ", age, ", school: ", school, "\n")
+    }
+}
+
+# 测试1: 使用无参构造函数
+var p1 = new Person
+p1.say()
+
+# 测试2: 使用带参构造函数
+var p2 = new Person("Alice", 25)
+p2.say()
+
+# 测试3: Student带参构造函数
+var s1 = new Student("Bob", 20, "MIT")
+s1.say()
+
+# 测试4: 深度拷贝函数（手动实现）
+var s2 = new Student("Charlie", 22, "Stanford")
+s2.say()
+
+print("All tests passed!\n")

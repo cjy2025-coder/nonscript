@@ -3,9 +3,10 @@ int_fmt db "%lld", 0
 str_fmt db "%s", 0
 newline db 10, 0
 scanf_fmt db "%lld", 0
-str0 db "hello, i am ", 0
-str1 db `\n`, 0
-str2 db "Tom", 0
+str0 db "1", 0
+str1 db "1", 0
+str2 db "2", 0
+str3 db "!1", 0
 
 section .bss
 
@@ -17,78 +18,53 @@ extern scanf
 extern malloc
 extern calloc
 
-say:
-  push rbp
-  mov rbp, rsp
-  sub rsp, 64
-  mov [rbp-8], rcx
-  lea rax, [str0]
-  mov [rbp-16], rax
-  sub rsp, 32
-  mov rdx, [rbp-16]
-  lea rcx, [rel str_fmt]
-  call printf
-  add rsp, 32
-  mov rax, [rbp-8]
-  mov rdx, [rax + 0]
-  mov [rbp-40], rdx
-  sub rsp, 32
-  mov rdx, [rbp-40]
-  lea rcx, [rel str_fmt]
-  call printf
-  add rsp, 32
-  lea rax, [str1]
-  mov [rbp-56], rax
-  sub rsp, 32
-  mov rdx, [rbp-56]
-  lea rcx, [rel str_fmt]
-  call printf
-  add rsp, 32
-  mov rsp, rbp
-  pop rbp
-  ret
-
-setName:
-  push rbp
-  mov rbp, rsp
-  sub rsp, 32
-  mov [rbp-8], rcx
-  mov [rbp-16], rdx
-  mov rax, [rbp-8]
-  mov rdx, [rax + 0]
-  mov [rbp-24], rdx
-  mov rax, [rbp-8]
-  mov rdx, [rbp-16]
-  mov [rax + 0], rdx
-  mov rsp, rbp
-  pop rbp
-  ret
-
 main:
   push rbp
   mov rbp, rsp
-  sub rsp, 64
-  mov rdx, 64
-  mov rcx, 1
-  sub rsp, 32
-  call calloc
-  add rsp, 32
+  sub rsp, 112
+  lea rax, [str0]
   mov [rbp-8], rax
   mov rax, [rbp-8]
   mov [rbp-24], rax
-  lea rax, [str2]
+  lea rax, [str1]
   mov [rbp-32], rax
-  sub rsp, 32
-  mov rcx, [rbp-24]
-  mov rdx, [rbp-32]
-  call setName
-  add rsp, 32
+  mov rax, [rbp-24]
+  cmp rax, [rbp-32]
+  setne al
+  movzx rax, al
+  mov [rbp-40], rax
+  mov rax, [rbp-40]
+  cmp rax, 0
+  jne .L2
+  mov rax, 1
   mov [rbp-48], rax
   sub rsp, 32
-  mov rcx, [rbp-24]
-  call say
+  mov rdx, [rbp-48]
+  lea rcx, [rel int_fmt]
+  call printf
   add rsp, 32
-  mov [rbp-56], rax
+  jmp .L1
+.L2:
+  lea rax, [str2]
+  mov [rbp-72], rax
+  mov rax, [rbp-24]
+  cmp rax, [rbp-72]
+  setne al
+  movzx rax, al
+  mov [rbp-88], rax
+  mov rax, [rbp-88]
+  cmp rax, 0
+  jne .L3
+  jmp .L1
+.L3:
+  lea rax, [str3]
+  mov [rbp-96], rax
+  sub rsp, 32
+  mov rdx, [rbp-96]
+  lea rcx, [rel str_fmt]
+  call printf
+  add rsp, 32
+.L1:
   mov rsp, rbp
   pop rbp
   ret

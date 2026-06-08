@@ -388,19 +388,68 @@ namespace ns
     TypeInfo *SemanticAnalyzer::check_call_expression(CallExpression *expr)
     {
         auto func = expr->getFunc();
+        auto func_name = func->getLiteral();
         auto typeInfo = check_expression(expr->getFunc());
+        
+        // 先收集参数类型
+        std::vector<std::unique_ptr<Expression>> &args = expr->getArgs();
+        std::vector<_type *> call_arg_types;
+        bool arg_error = false;
+        for (auto &arg : args)
+        {
+            auto arg_type = check_expression(arg.get());
+            if (_SEMANTIC_ERROR(arg_type)) {
+                arg_error = true;
+                continue;
+            }
+            call_arg_types.push_back(arg_type->baseType);
+        }
+        if (arg_error) MARK_ERROR;
+        
         if (_SEMANTIC_ERROR(typeInfo))
             MARK_ERROR;
-        else if (typeInfo->baseType->alias != "func")
+        
+        // 检查重载函数表（优先匹配参数）
+        bool found_overloaded = false;
+        auto *overloaded = st->find_overloaded(func_name);
+        if (overloaded && !overloaded->empty())
+        {
+            for (auto *sym : *overloaded)
+            {
+                if (std::holds_alternative<FuncDetail>(sym->type_info->detail))
+                {
+                    auto &fd = std::get<FuncDetail>(sym->type_info->detail);
+                    if (fd.param_types.size() == call_arg_types.size())
+                    {
+                        bool match = true;
+                        for (size_t i = 0; i < call_arg_types.size(); i++)
+                        {
+                            if (fd.param_types[i] != call_arg_types[i])
+                            {
+                                match = false;
+                                break;
+                            }
+                        }
+                        if (match)
+                        {
+                            found_overloaded = true;
+                            typeInfo = sym->type_info;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (!found_overloaded && typeInfo->baseType->alias != "func")
         {
             raiseError(ErrorType::SEMANTIC_ERROR,
-                       "expect function " + func->getLiteral(),
+                       "expect function " + func_name,
                        func->getToken().getLocation());
             MARK_ERROR;
         }
 
         ns::FuncDetail &func_detail = std::get<ns::FuncDetail>(typeInfo->detail);
-        std::vector<std::unique_ptr<Expression>> &args = expr->getArgs();
         if (func_detail.is_unlimited_args_func)
         {
             for (int i = 0; i < args.size(); i++)
@@ -418,7 +467,7 @@ namespace ns
         if (args.size() != arg_types.size())
         {
             raiseError(ErrorType::SEMANTIC_ERROR,
-                       "no match arguments for function: " + func->getLiteral(),
+                       "no match arguments for function: " + func_name,
                        func->getToken().getLocation());
             MARK_ERROR;
         }
@@ -444,13 +493,64 @@ namespace ns
     {
         TypeInfo *typeInfo = typeManager::find("func");
         std::string name = stmt->getLiteral();
-        if (find_symbol(name))
-        {
-            raiseError(ErrorType::SEMANTIC_ERROR,
-                       "redefine function: " + name,
-                       stmt->getToken().getLocation());
-            MARK_ERROR;
+        
+        // 检查是否有完全相同的签名（同名+同参）
+        std::vector<_type *> this_sig;
+        for (auto &param : stmt->getParams()) {
+            this_sig.push_back(typeManager::find(param->name->getType())->baseType);
         }
+        
+        auto* overloaded = st->find_overloaded(name);
+        if (overloaded) {
+            for (auto *sym : *overloaded) {
+                if (std::holds_alternative<FuncDetail>(sym->type_info->detail)) {
+                    auto &fd = std::get<FuncDetail>(sym->type_info->detail);
+                    if (fd.param_types.size() == this_sig.size()) {
+                        bool same = true;
+                        for (size_t i = 0; i < this_sig.size(); i++) {
+                            if (fd.param_types[i] != this_sig[i]) {
+                                same = false;
+                                break;
+                            }
+                        }
+                        if (same) {
+                            raiseError(ErrorType::SEMANTIC_ERROR,
+                                       "redefine function: " + name + " with same signature",
+                                       stmt->getToken().getLocation());
+                            MARK_ERROR;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 也检查普通符号表（非重载函数）
+        auto *existing = st->find(name);
+        if (existing && !overloaded) {
+            // 在重载表中不存在，但在普通符号表中存在 → 检查是否为同一个签名
+            if (std::holds_alternative<FuncDetail>(existing->type_info->detail)) {
+                auto &fd = std::get<FuncDetail>(existing->type_info->detail);
+                if (fd.param_types.size() == this_sig.size()) {
+                    bool same = true;
+                    for (size_t i = 0; i < this_sig.size(); i++) {
+                        if (fd.param_types[i] != this_sig[i]) {
+                            same = false;
+                            break;
+                        }
+                    }
+                    if (same) {
+                        raiseError(ErrorType::SEMANTIC_ERROR,
+                                   "redefine function: " + name,
+                                   stmt->getToken().getLocation());
+                        MARK_ERROR;
+                    }
+                }
+                // 签名不同 → 需要将旧的从普通表移到重载表，然后添加新的
+                // 删除旧符号（将被加入重载表）
+                // 由于无法从 unordered_map 删除，我们保留旧的但在重载表中重建
+            }
+        }
+        
         auto params = stmt->getParams();
         bool hasError = false;
         enter_scope();
@@ -497,7 +597,18 @@ namespace ns
         Symbol *new_symbol = new Symbol();
         new_symbol->name = name;
         new_symbol->type_info = typeInfo;
-        push_symbol(name, new_symbol);
+        
+        // 如果已有同名函数存在（不同签名），作为重载版本插入
+        if (existing && std::holds_alternative<FuncDetail>(existing->type_info->detail)) {
+            st->insert_overloaded(new_symbol);
+        } else {
+            // 检查是否该名字已经在重载表中
+            if (overloaded) {
+                st->insert_overloaded(new_symbol);
+            } else {
+                push_symbol(name, new_symbol);
+            }
+        }
         return typeInfo;
     }
     TypeInfo *SemanticAnalyzer::check_lambda_expression(LambdaExpr *expr)
@@ -582,6 +693,78 @@ namespace ns
             MARK_ERROR;
         return typeManager::find("void");
     }
+    TypeInfo *SemanticAnalyzer::check_switch_expression(SwitchExpression *expr)
+    {
+        // 1. 检查 switch 的条件表达式
+        auto condition = expr->getExpr();
+        auto cond_type = check_expression(condition);
+        if (_SEMANTIC_ERROR(cond_type))
+            MARK_ERROR;
+
+        bool hasError = false;
+
+        // 2. 为 switch 创建一个新的作用域（case 中的变量声明不会泄漏到外部）
+        enter_scope();
+
+        // 3. 检查各个 case
+        const auto &cases = expr->getCases();
+        for (const auto &_case : cases)
+        {
+            // 3a. 检查 case 的值表达式
+            auto case_val = _case->mcase.get();
+            auto case_type = check_expression(case_val);
+            if (_SEMANTIC_ERROR(case_type))
+            {
+                hasError = true;
+                continue;
+            }
+
+            // 3b. 检查 case 值的类型是否与 switch 表达式类型兼容
+            if (case_type->baseType != cond_type->baseType &&
+                !(is_number(case_type->baseType) && is_number(cond_type->baseType)))
+            {
+                raiseError(ErrorType::SEMANTIC_ERROR,
+                           "case value type '" + case_type->baseType->alias +
+                           "' does not match switch expression type '" + cond_type->baseType->alias + "'",
+                           case_val->getToken().getLocation());
+                hasError = true;
+                continue;
+            }
+
+            // 3c. 检查 case body
+            auto case_body = _case->mbody.get();
+            if (case_body)
+            {
+                // 为每个 case 创建独立的子作用域
+                enter_scope();
+                if (_SEMANTIC_ERROR(check_block_statement(case_body)))
+                    hasError = true;
+                exit_scope();
+            }
+        }
+
+        // 4. 检查 default case（如果有）
+        auto default_case = expr->getDefaultCase();
+        if (default_case)
+        {
+            auto default_body = default_case->mbody.get();
+            if (default_body)
+            {
+                enter_scope();
+                if (_SEMANTIC_ERROR(check_block_statement(default_body)))
+                    hasError = true;
+                exit_scope();
+            }
+        }
+
+        exit_scope();
+
+        if (hasError)
+            MARK_ERROR;
+
+        // switch 表达式本身没有值（返回 void）
+        return typeManager::find("void");
+    }
     TypeInfo *SemanticAnalyzer::check_expression(Expression *expr)
     {
         if (!expr)
@@ -627,35 +810,23 @@ namespace ns
         }
         else if (typeid(*expr) == typeid(NewExpression))
             return check_new_expression((NewExpression *)(expr));
+        else if (typeid(*expr) == typeid(SwitchExpression))
+            return check_switch_expression((SwitchExpression *)expr);
         else
             MARK_ERROR;
     }
     TypeInfo *SemanticAnalyzer::check_new_expression(NewExpression *expr)
     {
         auto temp = expr->getRight();
+        std::string class_name;
+        
         if (auto *_ = dynamic_cast<Ident *>(temp))
         {
-            auto type = _->getLiteral();
-            if (!typeManager::find(type))
-            {
-                raiseError(ErrorType::SEMANTIC_ERROR,
-                           "Unkown class: " + type,
-                           temp->getToken().getLocation());
-                MARK_ERROR;
-            }
-            return typeManager::find(type);
+            class_name = _->getLiteral();
         }
         else if (auto *_ = dynamic_cast<CallExpression *>(temp))
         {
-            auto type = _->getFunc()->getLiteral();
-            if (!typeManager::find(type))
-            {
-                raiseError(ErrorType::SEMANTIC_ERROR,
-                           "Unkown class: " + type,
-                           temp->getToken().getLocation());
-                MARK_ERROR;
-            }
-            return typeManager::find(type);
+            class_name = _->getFunc()->getLiteral();
         }
         else
         {
@@ -664,6 +835,19 @@ namespace ns
                        temp->getToken().getLocation());
             MARK_ERROR;
         }
+        
+        auto ct = st->find(class_name);
+        // 检查类是否存在
+        if (!typeManager::find(class_name))
+        {
+            raiseError(ErrorType::SEMANTIC_ERROR,
+                       "Unknown class: " + class_name,
+                       temp->getToken().getLocation());
+            MARK_ERROR;
+        }
+        
+        
+        return typeManager::find(class_name);
     }
     TypeInfo *SemanticAnalyzer::check_class_statement(ClassLiteral *stmt)
     {
@@ -764,11 +948,45 @@ namespace ns
             {
                 TypeInfo *typeInfo = typeManager::find("func");
                 std::string name_ = _stmt->getLiteral();
-                if (find_symbol(name_))
-                {
-                    raiseError(ErrorType::SEMANTIC_ERROR, "redefine function: " + name_, _stmt->getToken().getLocation());
-                    MARK_ERROR;
+                
+                // 检查是否与已存在的函数签名完全相同（支持重载）
+                std::vector<_type *> this_sig;
+                for (auto &param : _stmt->getParams()) {
+                    this_sig.push_back(typeManager::find(param->name->getType())->baseType);
                 }
+                
+                bool sig_match = false;
+                auto *existing = st->find(name_);
+                auto *overloaded_existing = st->find_overloaded(name_);
+                
+                if (overloaded_existing) {
+                    for (auto *sym : *overloaded_existing) {
+                        if (std::holds_alternative<FuncDetail>(sym->type_info->detail)) {
+                            auto &fd = std::get<FuncDetail>(sym->type_info->detail);
+                            if (fd.param_types.size() == this_sig.size()) {
+                                bool same = true;
+                                for (size_t i = 0; i < this_sig.size(); i++) {
+                                    if (fd.param_types[i] != this_sig[i]) { same = false; break; }
+                                }
+                                if (same) { sig_match = true; break; }
+                            }
+                        }
+                    }
+                }
+                if (existing && !overloaded_existing) {
+                    if (std::holds_alternative<FuncDetail>(existing->type_info->detail)) {
+                        auto &fd = std::get<FuncDetail>(existing->type_info->detail);
+                        if (fd.param_types.size() == this_sig.size()) {
+                            bool same = true;
+                            for (size_t i = 0; i < this_sig.size(); i++) {
+                                if (fd.param_types[i] != this_sig[i]) { same = false; break; }
+                            }
+                            if (same) { sig_match = true; }
+                        }
+                    }
+                }
+                
+                // 类成员函数允许覆盖（override），不报重定义错误
                 auto params = _stmt->getParams();
                 enter_scope();
                 FuncDetail funcDetail = {};

@@ -13,8 +13,26 @@
 // #include "compiler.h"
 namespace ns
 {
+// 语义错误检查宏：如果 r 为空或等于 _errorType，返回 true（有错）
 #define _SEMANTIC_ERROR(r) (!(r)) || ((r) == (_errorType))
 #define MARK_ERROR return (_errorType)
+
+// 统一语义错误宏：自动附带源码上下文
+#define SEMANTIC_ERR(code, msg, loc) \
+    do { \
+        std::string _ctx = SourceUtil::getLineText(mLexer->getSource(), (loc).line) + \
+                           SourceUtil::getCaretPointer((loc).col); \
+        raiseError((code), (msg), (loc), _ctx); \
+        return _errorType; \
+    } while(0)
+
+#define SEMANTIC_ERR_RET(code, msg, loc, ret) \
+    do { \
+        std::string _ctx = SourceUtil::getLineText(mLexer->getSource(), (loc).line) + \
+                           SourceUtil::getCaretPointer((loc).col); \
+        raiseError((code), (msg), (loc), _ctx); \
+        return (ret); \
+    } while(0)
     typedef struct _Symbol
     {
         TypeInfo *type_info;
@@ -22,13 +40,21 @@ namespace ns
     } Symbol;
     struct Scope
     {
+        // 普通符号（变量、类等）：一个名字只对应一个符号
         std::unordered_map<std::string, Symbol *> symbols_;
+        // 重载函数：一个名字对应多个符号（函数重载）
+        std::unordered_map<std::string, std::vector<Symbol *>> overloaded_funcs_;
         Scope *parent_ = nullptr;
         ~Scope()
         {
             for (auto &pair : symbols_)
             {
                 delete pair.second;
+            }
+            for (auto &pair : overloaded_funcs_)
+            {
+                for (auto *sym : pair.second)
+                    delete sym;
             }
         }
     };
@@ -59,10 +85,17 @@ namespace ns
             current_ = current_->parent_;
             delete old_scope;
         }
+        // 插入普通符号（变量、类、非重载函数）
         void insert(Symbol *symbol)
         {
             current_->symbols_[symbol->name] = symbol;
         }
+        // 插入重载函数：同名但不同参数类型的函数
+        void insert_overloaded(Symbol *symbol)
+        {
+            current_->overloaded_funcs_[symbol->name].push_back(symbol);
+        }
+        // 查找普通符号（精确匹配名字）
         Symbol *find(const std::string name) const
         {
             Scope *ps = current_;
@@ -73,6 +106,32 @@ namespace ns
                 if (it != sbs.end())
                 {
                     return it->second;
+                }
+                // 也在重载表中查找（仅在无精确匹配时返回第一个，用于检查重定义）
+                const auto &of_it = ps->overloaded_funcs_.find(name);
+                if (of_it != ps->overloaded_funcs_.end())
+                {
+                    // 返回第一个重载版本（调用方应知道这是一个重载函数）
+                    return of_it->second[0];
+                }
+                ps = ps->parent_;
+                if (!ps)
+                {
+                    break;
+                }
+            }
+            return nullptr;
+        }
+        // 查找重载函数列表
+        std::vector<Symbol *> *find_overloaded(const std::string name) const
+        {
+            Scope *ps = current_;
+            while (1)
+            {
+                const auto &of_it = ps->overloaded_funcs_.find(name);
+                if (of_it != ps->overloaded_funcs_.end())
+                {
+                    return const_cast<std::vector<Symbol *> *>(&(of_it->second));
                 }
                 ps = ps->parent_;
                 if (!ps)
@@ -150,6 +209,10 @@ namespace ns
             msg += SourceUtil::getCaretPointer(location.col);
             em_->report(ComilerError(type, e + "\n" + msg, location));
         }
+        void raiseError(ErrorCode code, const std::string &e, sourceLocation location, const std::string &)
+        {
+            em_->semanticError(code, e, location);
+        }
 
     private:
         void exit_scope()
@@ -178,6 +241,7 @@ namespace ns
         TypeInfo *check_prefix_expression(PrefixExpression *expr);
         TypeInfo *check_infix_expression(InfixExpression *expr);
         TypeInfo *check_lambda_expression(LambdaExpr *expr);
+        TypeInfo *check_switch_expression(SwitchExpression * expr);
         TypeInfo *check_block_statement(BlockStatement *stmt);
         TypeInfo *check_statement(Statement *stmt);
         TypeInfo *check_declare_statement(DeclareStatement *stmt);

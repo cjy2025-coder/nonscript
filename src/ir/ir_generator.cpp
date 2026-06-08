@@ -237,6 +237,9 @@ namespace ns
         return t;
     }
 
+    // 辅助函数：推断表达式的类型字符串（前向声明）
+    static std::string infer_expr_type(Expression *expr);
+
     std::string IrGenerator::visit_prefix(PrefixExpression *expr)
     {
         std::string op = expr->getOperator();
@@ -269,12 +272,48 @@ namespace ns
                 // 生成 this 指针
                 this_var = visit(infix->getLeft());
                 // 获取方法名
-                func_name = infix->getRight()->getLiteral();
+                std::string raw_method_name = infix->getRight()->getLiteral();
+                func_name = raw_method_name;
+                
+                // 从左侧对象类型推断完整的 class.method_param 名称
+                auto *left_expr = infix->getLeft();
+                std::string obj_type;
+                if (auto *left_ident = dynamic_cast<Ident *>(left_expr)) {
+                    obj_type = left_ident->getType();
+                }
+                if (!obj_type.empty()) {
+                    // 收集调用参数类型
+                    std::vector<_type *> call_param_types;
+                    for (auto &arg : expr->getArgs()) {
+                        // 从语义类型信息获取
+                        std::string arg_type_name = arg->getType();
+                        if (!arg_type_name.empty()) {
+                            TypeInfo *ti = typeManager::find(arg_type_name);
+                            if (ti) call_param_types.push_back(ti->baseType);
+                        }
+                    }
+                    func_name = obj_type + "." + mangle_name(raw_method_name, call_param_types);
+                }
             }
         }
         else if (auto *ident = dynamic_cast<Ident *>(func_expr))
         {
-            func_name = ident->getLiteral();
+            std::string raw_name = ident->getLiteral();
+            // 内置函数不进行 Name Mangling
+            if (raw_name == "print" || raw_name == "scan") {
+                func_name = raw_name;
+            } else {
+                // 对于直接函数调用，使用 mangled name
+                std::vector<_type *> call_param_types;
+                for (auto &arg : expr->getArgs()) {
+                    std::string arg_type_name = infer_expr_type(arg.get());
+                    if (!arg_type_name.empty()) {
+                        TypeInfo *ti = typeManager::find(arg_type_name);
+                        if (ti) call_param_types.push_back(ti->baseType);
+                    }
+                }
+                func_name = mangle_name(raw_name, call_param_types);
+            }
         }
 
         auto &args = expr->getArgs();
@@ -487,6 +526,22 @@ namespace ns
         return t;
     }
 
+    // 辅助函数：推断表达式的类型字符串
+    static std::string infer_expr_type(Expression *expr) {
+        if (dynamic_cast<StringLiteral*>(expr)) return "string";
+        if (dynamic_cast<I8Literal*>(expr)) return "i8";
+        if (dynamic_cast<I16Literal*>(expr)) return "i16";
+        if (dynamic_cast<I32Literal*>(expr)) return "i32";
+        if (dynamic_cast<I64Literal*>(expr)) return "i64";
+        if (dynamic_cast<Float32Literal*>(expr)) return "f32";
+        if (dynamic_cast<Float64Literal*>(expr)) return "f64";
+        if (dynamic_cast<BoolLiteral*>(expr)) return "bool";
+        if (dynamic_cast<NullLiteral*>(expr)) return "void";
+        std::string t = expr->getType();
+        if (!t.empty()) return t;
+        return "";
+    }
+
     std::string IrGenerator::visit_new(NewExpression *expr)
     {
         auto *right = expr->getRight();
@@ -508,15 +563,41 @@ namespace ns
             if (class_field_inits.count(class_name)) {
                 for (auto &[fname, init_expr] : class_field_inits[class_name]) {
                     if (init_expr) {
-                        // 计算初始值
                         std::string val = visit(init_expr);
-                        // 获取字段索引
                         int field_idx = 0;
                         if (class_fields[class_name].count(fname))
                             field_idx = class_fields[class_name][fname];
-                        // 写入: t[field_idx] = val
                         emit(Op::STORE_INDEX, val, t, std::to_string(field_idx));
                     }
+                }
+            }
+            
+            // 如果有构造函数参数，调用构造函数
+            if (auto *call = dynamic_cast<CallExpression *>(right))
+            {
+                auto &args = call->getArgs();
+                if (!args.empty())
+                {
+                    // 收集参数类型以构造 mangled name: class.__constructor__paramtype
+                    std::vector<_type *> ctor_param_types;
+                    for (auto &arg : args) {
+                        std::string arg_type_name = infer_expr_type(arg.get());
+                        if (!arg_type_name.empty()) {
+                            TypeInfo *ti = typeManager::find(arg_type_name);
+                            if (ti) ctor_param_types.push_back(ti->baseType);
+                        }
+                    }
+                    std::string mangled_ctor = class_name + "." + mangle_name("__constructor__", ctor_param_types);
+                    // 先传 this 指针
+                    emit(Op::PARAM, t);
+                    // 传参数
+                    for (auto &arg : args)
+                    {
+                        std::string a = visit(arg.get());
+                        emit(Op::PARAM, a);
+                    }
+                    std::string result = new_temp();
+                    emit(Op::CALL, result, mangled_ctor);
                 }
             }
         }
@@ -604,6 +685,14 @@ namespace ns
     void IrGenerator::visit_func(FuncDecl *stmt)
     {
         std::string func_name = stmt->getLiteral();
+        std::string mangled_name = func_name;
+
+        // 如果不是构造函数且参数不为空，使用 mangled name
+        if (func_name != "__constructor__")
+        {
+            auto param_types = get_param_types_from_func(stmt);
+            mangled_name = mangle_name(func_name, param_types);
+        }
 
         // 保存当前函数上下文
         FuncIR saved_func = current_func;
@@ -611,7 +700,7 @@ namespace ns
         int saved_next = next_offset;
 
         current_func = FuncIR();
-        current_func.name = func_name;
+        current_func.name = mangled_name;
         var_offsets.clear();
         next_offset = -8;
 
@@ -621,7 +710,6 @@ namespace ns
         for (const auto &p : params)
         {
             std::string pname = p->name->getLiteral();
-            // int off = getOrAllocOffset(pname);
             current_func.params.push_back(pname);
         }
 
@@ -720,6 +808,10 @@ namespace ns
                 if (auto *func = dynamic_cast<FuncDecl *>(mem.declaration.get()))
                 {
                     std::string method_name = func->getLiteral();
+                    
+                    // 类名.方法名_参数类型组合，避免重载冲突
+                    auto param_types = get_param_types_from_func(func);
+                    method_name = class_name + "." + mangle_name(method_name, param_types);
                     FuncIR saved_func = current_func;
                     auto saved_offsets = var_offsets;
                     int saved_next = next_offset;

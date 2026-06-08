@@ -19,6 +19,22 @@ namespace ns
         POINT // 成员访问运算符.
     };
 
+    // Parser 便捷报错宏
+    // 用法: SYNTAX_ERR(ErrorCode::MISS_TOKEN, "miss '('") -> return nullptr;
+    #define SYNTAX_ERR(code, msg) \
+        do { \
+            em_->syntaxError((code), (msg), (current.getLocation())); \
+            return nullptr; \
+        } while(0)
+
+    #define SYNTAX_ERR_LOC(code, msg, loc) \
+        do { \
+            em_->syntaxError((code), (msg), (loc)); \
+            return nullptr; \
+        } while(0)
+
+    #define MISS_TOKEN(token) SYNTAX_ERR(ErrorCode::MISS_TOKEN, "miss '" token "'")
+    #define UNEXPECTED_TOKEN() SYNTAX_ERR(ErrorCode::UNEXPECTED_TOKEN, "unexpected '" + current.getLiteral() + "'")
     #define CURRENT_LOCATION (current.getLocation())
     class Parser
     {
@@ -90,7 +106,7 @@ namespace ns
         std::unique_ptr<DeclareStatement> parse_declare_statement();
         std::unique_ptr<ExpressionStatement> parse_expression_statement();
         std::vector<std::shared_ptr<FuncParam>> parse_func_params(int &error);
-        std::unique_ptr<FuncDecl> parse_func_statement(bool is_extern_func = false);
+        std::unique_ptr<FuncDecl> parse_func_statement(bool is_extern_func = false,bool is_member_func  = false);
         std::unique_ptr<ClassLiteral> parse_class_statement();
         std::unique_ptr<BlockStatement> parse_blockstatement(int loop);
         std::unique_ptr<ReturnStatement> parse_return_statement();

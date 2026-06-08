@@ -75,7 +75,7 @@ std::string  op_to_string(ns::Op op) {
 static void error(const std::string &msg)
 {
     set_red();
-    std::cerr << "nsc: " << msg << std::endl;
+    std::cerr << msg << std::endl;
     reset_color();
     exit(EXIT_FAILURE);
 }
@@ -162,12 +162,20 @@ int main(int argc, char *argv[])
     ns::Lexer lexer(source, input_file);
     ns::typeManager::init();
     ns::Parser parser(&lexer);
+    parser.what()->setSource(source);
     auto program = parser.parse();
-    if (!program) error(parser.what()->whats());
+    if (!program) 
+    {
+        error(parser.what()->prettyPrint(source));
+    }
 
     // 2. 语义分析
     ns::SemanticAnalyzer sa(&lexer);
-    if (!sa.check(program.get())) error(sa.what()->whats());
+    sa.what()->setSource(source);
+    if (!sa.check(program.get())) 
+    {
+        error(sa.what()->prettyPrint(source));
+    }
 
     // 3. IR 生成
     ns::IrGenerator ir_gen;
@@ -180,7 +188,7 @@ int main(int argc, char *argv[])
     // 5. 保存 IR（如需要）
     if (save_temps)
     {
-        std::string ir_path = base_name + ".ir";
+        std::string ir_path = base_name + ".tac";
         std::ofstream ir_file(ir_path);
         for (auto &func : pir.functions)
         {

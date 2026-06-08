@@ -42,7 +42,7 @@ namespace ns
       std::string alias;
       int id;
    } *_ptype;
-   typedef struct _FuncDetail
+    typedef struct _FuncDetail
     {
         std::vector<_type *> param_types;
         _type *return_type;
@@ -52,6 +52,8 @@ namespace ns
         bool is_builtin_func = false;
         // 默认为false
         bool is_unlimited_args_func = false;
+        // 访问级别（用于构造函数等访问控制）
+        AccessLevel access = AccessLevel::Public;
     } FuncDetail;
     typedef struct _TypeInfo TypeInfo;
     typedef struct _ArrayDetail
